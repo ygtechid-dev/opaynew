@@ -14,8 +14,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { API_URL } from '../context/APIUrl';
+import Contacts from 'react-native-contacts';
+import { PermissionsAndroid, Platform } from 'react-native';
 
-export default function PulsaDataPage({ navigation }) {
+
+export default function PulsaDataPage({ navigation, route }) {
+    const {title} = route.params
   const [activeTab, setActiveTab] = useState('pulsa'); // 'pulsa' or 'data'
   const [phoneNumber, setPhoneNumber] = useState('');
   const [selectedProvider, setSelectedProvider] = useState('');
@@ -26,6 +30,7 @@ export default function PulsaDataPage({ navigation }) {
   const [isAgen, setIsAgen] = useState(false);
   const [isLoadingAgen, setIsLoadingAgen] = useState(true);
   const [sortByLowestPrice, setSortByLowestPrice] = useState(false);
+
 
   const providerPrefixes = {
     TELKOMSEL: ['0811', '0812', '0813', '0821', '0822', '0823', '0851', '0852', '0853'],
@@ -57,15 +62,22 @@ export default function PulsaDataPage({ navigation }) {
       color: '#E91E63',
     },
     TRI: {
-      image: require('../assets/tri_logo.png'),
+      image: require('../assets/tri_logo.jpg'),
       initial: 'TRI',
       color: '#9C27B0',
     },
   };
 
-  useEffect(() => {
-    checkAgenStatus();
-  }, []);
+useEffect(() => {
+  checkAgenStatus();
+
+  if (title === "Paket Data") {
+    setActiveTab("data"); 
+  } else {
+    setActiveTab("pulsa");
+  }
+}, []);
+
 
   useEffect(() => {
     if (phoneNumber.length >= 10) {
@@ -93,7 +105,10 @@ export default function PulsaDataPage({ navigation }) {
         `${API_URL}/api/users/agen/user/${userObj.id}`
       );
 
-      if (response.data.status && response.data.data && response.data.data.length > 0) {
+      console.log('====================================');
+      console.log('resss', response.data);
+      console.log('====================================');
+      if (response.data && response.data.length > 0) {
         setIsAgen(true);
       } else {
         setIsAgen(false);
@@ -188,16 +203,59 @@ export default function PulsaDataPage({ navigation }) {
   };
 
   const handlePhoneChange = (text) => {
-    // Only allow numbers
     const cleaned = text.replace(/[^0-9]/g, '');
     setPhoneNumber(cleaned);
     detectProvider(cleaned);
   };
 
-  const openContactPicker = () => {
-    // Implement contact picker functionality
-    Alert.alert('Info', 'Fitur pemilih kontak akan segera tersedia');
-  };
+ const openContactPicker = async () => {
+  try {
+    // === ANDROID PERMISSION ===
+    if (Platform.OS === 'android') {
+      const permission = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.READ_CONTACTS,
+        {
+          title: 'Izin Akses Kontak',
+          message: 'Aplikasi membutuhkan akses kontak untuk memilih nomor.',
+          buttonPositive: 'OK',
+        }
+      );
+
+      if (permission !== PermissionsAndroid.RESULTS.GRANTED) {
+        Alert.alert('Izin ditolak', 'Tidak bisa membuka kontak tanpa izin.');
+        return;
+      }
+    }
+
+    // === OPEN CONTACT PICKER ===
+    const contact = await Contacts.openContactPicker();
+
+    if (!contact.phoneNumbers || contact.phoneNumbers.length === 0) {
+      Alert.alert('Tidak ada nomor telepon', 'Kontak tidak punya nomor.');
+      return;
+    }
+
+    // Ambil nomor pertama
+    let number = contact.phoneNumbers[0].number;
+
+    // === BERSIHKAN FORMAT NOMOR ===
+    number = number
+      .replace(/\s+/g, '')   // hilangkan spasi
+      .replace(/-/g, '')     // hilangkan strip
+      .replace(/\(/g, '')    // hilangkan (
+      .replace(/\)/g, '')    // hilangkan )
+      .replace(/^\+62/, '0'); // convert +62 ke 0
+
+    // set ke input
+    setPhoneNumber(number);
+
+    // jalankan deteksi provider
+    detectProvider(number);
+
+  } catch (error) {
+    console.log('Error open contact picker:', error);
+  }
+};
 
   const formatPrice = (price) => {
     const priceDouble = parseFloat(price) || 0;
@@ -205,7 +263,7 @@ export default function PulsaDataPage({ navigation }) {
   };
 
   const navigateToPayment = (product) => {
-    navigation.navigate('PaymentDetail', {
+    navigation.navigate('PaymentDetailPage', {
       product,
       phoneNumber,
       provider: selectedProvider,
@@ -215,10 +273,7 @@ export default function PulsaDataPage({ navigation }) {
 
   const renderProductCard = (product) => {
     const productName = product.product_name || '';
-    const nominalPoint = product.nominal_point 
-      ? `${parseFloat(product.nominal_point).toFixed(0)} Poin`
-      : '';
-
+    
     const displayPrice = isAgen 
       ? formatPrice(product.price || '0')
       : formatPrice(product.priceTierTwo || product.price || '0');
@@ -232,77 +287,89 @@ export default function PulsaDataPage({ navigation }) {
         onPress={() => navigateToPayment(product)}
       >
         <View style={styles.productCardInner}>
-          {/* Provider Logo */}
-          {selectedProvider && (
-            <View style={styles.providerLogoContainer}>
+          {/* Left Section - Logo & Info */}
+          <View style={styles.leftSection}>
+            {selectedProvider && (
               <Image
                 source={providerInfo[selectedProvider]?.image}
                 style={styles.providerLogo}
                 resizeMode="contain"
               />
+            )}
+            <View style={styles.productInfo}>
+              <Text style={styles.productName} numberOfLines={1}>
+                {productName}
+              </Text>
+              <Text style={styles.productPrice}>{displayPrice}</Text>
             </View>
-          )}
-
-          {/* Product Info */}
-          <View style={styles.productInfo}>
-            <Text style={styles.productName} numberOfLines={2}>
-              {productName}
-            </Text>
-            <Text style={styles.productPrice}>{displayPrice}</Text>
           </View>
 
           {/* Divider */}
           <View style={styles.verticalDivider} />
 
-          {/* Poin */}
-          {nominalPoint ? (
-            <View style={styles.pointContainer}>
-              <Text style={styles.pointText}>{nominalPoint}</Text>
-            </View>
-          ) : null}
+          {/* Right Section - Agen Info */}
 
-          {/* Divider */}
-          <View style={styles.verticalDivider} />
+{isAgen ? 
 
-          {/* Agen Section */}
-          {isAgen ? (
-            <View style={styles.agenSection}>
-              <Text style={styles.agenText}>
-                Anda mendapatkan harga{'\n'}agen platinum
-              </Text>
+   <View style={styles.rightSection}>
+            <View style={{flexDirection: 'row'}}>
+               <View>
+  <Text style={styles.agenLabel}>
+    Anda mendapatkan{'\n'}Harga{' '}
+    <Text style={styles.agenPlatinum}>Agen Platinum</Text>
+  </Text>
+</View>
+
+
+                <Image source={require('../assets/verified.png')} style={{width: 20, height: 20, marginLeft: 10}} />
+         
+            {/* <View style={{flexDirection: 'row'}}>
+            <Text style={styles.agenPrice}>{agenPrice}</Text>
+ <View style={styles.arrowContainer}>
+            <Icon name="play" size={14} color="white" />
+          </View>
+            </View> */}
+  
             </View>
-          ) : (
-            <View style={styles.agenSection}>
-              <Text style={styles.agenLabel}>Harga Agen Platinum</Text>
-              <View style={styles.agenPriceRow}>
-                <Text style={styles.agenPrice}>{agenPrice}</Text>
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('DaftarAgen')}
-                  style={styles.verifiedIconContainer}
-                >
-                  <Image
-                    source={require('../assets/verified.png')}
-                    style={styles.verifiedIcon}
-                    resizeMode="contain"
-                  />
-                </TouchableOpacity>
-              </View>
+            
+          </View>
+
+          :
+            <View style={styles.rightSection}>
+            <View>
+            <Text style={styles.agenLabel}>
+              Daftar Agen Platinum,{'\n'}dapatkan harga murah
+            </Text>
+
+            <View style={{flexDirection: 'row'}}>
+            <Text style={styles.agenPrice}>{agenPrice}</Text>
+ <View style={styles.arrowContainer}>
+            <Icon name="play" size={14} color="white" />
+          </View>
             </View>
-          )}
+  
+            </View>
+            
+          </View>
+}
+
+       
+
+          {/* Arrow Icon */}
+       
         </View>
-
-        {/* Info text */}
-        {!isAgen && (
-          <Text style={styles.infoText}>
-            *Klik di icon centang biru untuk daftar agen platinum
-          </Text>
-        )}
       </TouchableOpacity>
     );
   };
 
   const renderProductList = () => {
-    const currentProducts = activeTab === 'pulsa' ? pulsaProducts : dataProducts;
+    let currentProducts = [];
+
+if (title === "Paket Data") {
+  currentProducts = dataProducts;
+} else {
+  currentProducts = activeTab === "pulsa" ? pulsaProducts : dataProducts;
+}
 
     if (phoneNumber.length < 10) {
       return (
@@ -340,6 +407,7 @@ export default function PulsaDataPage({ navigation }) {
       <ScrollView 
         style={styles.productList}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.productListContent}
       >
         {currentProducts.map((product) => renderProductCard(product))}
         <View style={{ height: 20 }} />
@@ -351,109 +419,60 @@ export default function PulsaDataPage({ navigation }) {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Image
-            source={require('../assets/goback.png')}
-            style={styles.backIcon}
-            resizeMode="contain"
-          />
+        <TouchableOpacity 
+          onPress={() => navigation.goBack()}
+          style={styles.backButton}
+        >
+          <Icon name="chevron-back" size={28} color="#000" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Pulsa & Data</Text>
+        <Text style={styles.headerTitle}>{title}</Text>
       </View>
 
-      {/* Input Section */}
-      <View style={styles.inputSection}>
-        {/* Filter Button */}
-        <TouchableOpacity
-          style={styles.filterButton}
-          onPress={togglePriceFilter}
-        >
-          <Text
-            style={[
-              styles.filterText,
-              sortByLowestPrice && styles.filterTextActive,
-            ]}
-          >
-            Harga Terendah
-          </Text>
-          <Icon
-            name="options-outline"
-            size={16}
-            color={sortByLowestPrice ? '#2F318B' : '#000'}
-          />
-        </TouchableOpacity>
+      {/* Content */}
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* Input Section */}
+        <View style={styles.inputSection}>
+          <Text style={styles.inputLabel}>Masukkan No. Telepon</Text>
 
-        {/* Phone Input Label */}
-        <Text style={styles.inputLabel}>Masukan Nomor Telepon</Text>
+          {/* Phone Input Row */}
+          <View style={styles.inputRow}>
+            <View style={styles.phoneInputContainer}>
+              <TextInput
+                style={styles.phoneInput}
+                placeholder="08xxxxxxx"
+                placeholderTextColor="#BAB0B0"
+                value={phoneNumber}
+                onChangeText={handlePhoneChange}
+                keyboardType="phone-pad"
+                maxLength={13}
+              />
+              {selectedProvider && (
+                <Image
+                  source={providerInfo[selectedProvider]?.image}
+                  style={styles.providerIconSmall}
+                  resizeMode="contain"
+                />
+              )}
+            </View>
 
-        {/* Phone Input Row */}
-        <View style={styles.inputRow}>
-          <View style={styles.phoneInputContainer}>
-            <TextInput
-              style={styles.phoneInput}
-              placeholder="08xxxxxxx"
-              placeholderTextColor="#BAB0B0"
-              value={phoneNumber}
-              onChangeText={handlePhoneChange}
-              keyboardType="phone-pad"
-              maxLength={13}
-            />
-            {selectedProvider && (
+            <TouchableOpacity
+              style={styles.contactButton}
+              onPress={openContactPicker}
+            >
               <Image
-                source={providerInfo[selectedProvider]?.image}
-                style={styles.providerIconSmall}
+                source={require('../assets/bookuser.png')}
+                style={styles.contactIcon}
                 resizeMode="contain"
               />
-            )}
+            </TouchableOpacity>
           </View>
-
-          <TouchableOpacity
-            style={styles.contactButton}
-            onPress={openContactPicker}
-          >
-            <Image
-              source={require('../assets/bookuser.png')}
-              style={styles.contactIcon}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
         </View>
-      </View>
 
-      {/* Tabs */}
-      {phoneNumber.length >= 10 && (
-        <View style={styles.tabContainer}>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'pulsa' && styles.tabActive]}
-            onPress={() => setActiveTab('pulsa')}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                activeTab === 'pulsa' && styles.tabTextActive,
-              ]}
-            >
-              Pulsa
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'data' && styles.tabActive]}
-            onPress={() => setActiveTab('data')}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                activeTab === 'data' && styles.tabTextActive,
-              ]}
-            >
-              Data
-            </Text>
-          </TouchableOpacity>
+        {/* Product List */}
+        <View style={styles.productListWrapper}>
+          {renderProductList()}
         </View>
-      )}
-
-      {/* Product List */}
-      {renderProductList()}
+      </ScrollView>
     </View>
   );
 }
@@ -461,56 +480,33 @@ export default function PulsaDataPage({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#F4F8FF',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFF',
-    paddingHorizontal: 12,
+    paddingHorizontal: 20,
     paddingVertical: 15,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
+    paddingTop: 30,
   },
-  backIcon: {
-    width: 31,
-    height: 31,
+  backButton: {
+    marginRight: 20,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
     color: '#000',
-    marginLeft: 13,
     fontFamily: 'Poppins-SemiBold',
   },
   inputSection: {
-    backgroundColor: '#FFF',
     padding: 20,
-  },
-  filterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-end',
-    marginBottom: 10,
-  },
-  filterText: {
-    fontSize: 12,
-    fontWeight: '300',
-    color: '#000',
-    marginRight: 6,
-    fontFamily: 'Poppins-Light',
-  },
-  filterTextActive: {
-    color: '#2F318B',
+    paddingTop: 30,
   },
   inputLabel: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '400',
     color: '#000',
-    marginBottom: 12,
+    marginBottom: 15,
     fontFamily: 'Poppins-Regular',
   },
   inputRow: {
@@ -524,176 +520,136 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: 'rgba(47, 49, 139, 0.4)',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    borderColor: 'rgba(47, 49, 139, 0.3)',
+    paddingHorizontal: 20,
+    paddingVertical: 18,
     marginRight: 12,
   },
   phoneInput: {
     flex: 1,
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 16,
+    fontWeight: '400',
     color: '#000',
     padding: 0,
-    fontFamily: 'Poppins-Medium',
+    fontFamily: 'Poppins-Regular',
   },
   providerIconSmall: {
-    width: 24,
-    height: 24,
+    width: 32,
+    height: 32,
     marginLeft: 8,
   },
   contactButton: {
-    width: 60,
-    height: 60,
+    width: 64,
+    height: 64,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: 'rgba(47, 49, 139, 0.4)',
+    borderColor: 'rgba(47, 49, 139, 0.3)',
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#FFF',
   },
   contactIcon: {
-    width: 30,
-    height: 30,
+    width: 32,
+    height: 32,
   },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#FFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
-  },
-  tab: {
+  productListWrapper: {
     flex: 1,
-    paddingVertical: 15,
-    alignItems: 'center',
-    borderBottomWidth: 3,
-    borderBottomColor: 'transparent',
-  },
-  tabActive: {
-    borderBottomColor: '#2F318B',
-  },
-  tabText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#9E9E9E',
-    fontFamily: 'Poppins-SemiBold',
-  },
-  tabTextActive: {
-    color: '#2F318B',
+    minHeight: 400,
+    backgroundColor: 'white',
+    borderTopLeftRadius: 50,
+    borderTopRightRadius: 50
   },
   productList: {
     flex: 1,
+  },
+  productListContent: {
     padding: 20,
   },
   productCard: {
-    marginBottom: 12,
+    marginBottom: 16,
+    borderRadius: 16,
+    backgroundColor: '#FFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
   },
   productCardInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFF',
-    borderRadius: 20,
-    padding: 16,
-    minHeight: 80,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: 'rgba(47, 49, 139, 0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    minHeight: 90,
   },
-  providerLogoContainer: {
-    width: 40,
-    height: 40,
-    marginRight: 0,
+  leftSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   providerLogo: {
-    width: 40,
-    height: 40,
+    width: 45,
+    height: 55,
+    marginRight: 8,
   },
   productInfo: {
     flex: 1,
-    marginLeft: 0,
   },
   productName: {
-    fontSize: 10,
-    fontWeight: '300',
+    fontSize: 9,
     color: '#000',
-    marginBottom: 2,
-    fontFamily: 'Poppins-Light',
+    marginBottom: 0,
+    fontFamily: 'Poppins-Regular',
   },
   productPrice: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 16,
     color: '#000',
     fontFamily: 'Poppins-SemiBold',
   },
   verticalDivider: {
     width: 1,
-    height: 40,
+    height: 50,
     backgroundColor: '#E0E0E0',
-    marginHorizontal: 3,
+    marginHorizontal: 16,
   },
-  pointContainer: {
-    paddingHorizontal: 0,
-  },
-  pointText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#FFB800',
-    textAlign: 'center',
-    fontFamily: 'Poppins-Bold',
-  },
-  agenSection: {
-    paddingLeft: 8,
-  },
-  agenText: {
-    fontSize: 10,
-    fontWeight: '400',
-    color: '#000',
-    textAlign: 'center',
-    fontFamily: 'Poppins-Regular',
+  rightSection: {
+    flex: 1,
   },
   agenLabel: {
-    fontSize: 9,
-    fontWeight: '400',
-    color: '#AFAFB2',
-    marginBottom: 4,
+    fontSize: 10,
+    color: '#000',
+    lineHeight: 16,
+    marginBottom: 6,
     fontFamily: 'Poppins-Regular',
   },
-  agenPriceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    agenPlatinum: {
+    fontSize: 10,
+    color: '#2F318B',
+    lineHeight: 16,
+    marginBottom: 6,
+    fontFamily: 'Poppins-SemiBold',
   },
   agenPrice: {
-    fontSize: 11,
+    fontSize: 16,
     fontWeight: '700',
-    color: '#AFAFB2',
-    marginRight: 20,
+    color: '#2F318B',
     fontFamily: 'Poppins-Bold',
   },
-  verifiedIconContainer: {
-    width: 18,
-    height: 18,
-  },
-  verifiedIcon: {
-    width: 18,
-    height: 18,
-  },
-  infoText: {
-    fontSize: 8,
-    fontWeight: '300',
-    color: '#000',
-    fontStyle: 'italic',
-    textAlign: 'right',
-    marginTop: 4,
-    marginRight: 4,
-    fontFamily: 'Poppins-LightItalic',
+  arrowContainer: {
+    width: 23,
+    height: 23,
+    borderRadius: 16,
+    backgroundColor: '#2F318B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 30
+    
   },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 100,
   },
   emptyStateText: {
     fontSize: 12,
@@ -707,5 +663,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 100,
   },
 });

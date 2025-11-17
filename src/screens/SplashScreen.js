@@ -1,12 +1,29 @@
 import React, { useEffect } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet, Image } from 'react-native';
-import IMGsrc from '../assets/splashimg.png';
+import IMGsrc from '../assets/splash_new.png';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 export default function SplashScreen({ navigation }) {
-  useEffect(() => {
-    setTimeout(() => {
+ useEffect(() => {
+  const checkAuth = async () => {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+
+      setTimeout(() => {
+        if (token) {
+          navigation.replace("Home");   // Langsung ke Home
+        } else {
+          navigation.replace("Onboarding"); // Belum login → Onboarding
+        }
+      }, 1500);
+
+    } catch (error) {
+      console.log("Error checking token:", error);
       navigation.replace("Onboarding");
-    }, 1500);
-  }, []);
+    }
+  };
+
+  checkAuth();
+}, []);
 
   return (
     <View style={styles.container}>

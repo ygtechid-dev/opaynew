@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,13 +9,20 @@ import {
   Image,
   Dimensions,
   StatusBar,
+  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { API_URL } from '../../context/APIUrl';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 
 const { width } = Dimensions.get('window');
 
 export default function HomeTab({navigation}) {
   const scrollViewRef = useRef(null);
+  const [isAgen, setIsAgen] = useState(false);
+  const [isLoadingAgen, setIsLoadingAgen] = useState(true);
+  const [userData, setUserData] = useState(null);
 
   const services = [
     { id: 1, icon: require('../../assets/paket-data.png'), label: 'Paket Data', path: 'DashboardPPOB' },
@@ -34,6 +41,77 @@ export default function HomeTab({navigation}) {
     { id: 7, icon: require('../../assets/dimakanin.png'), label: 'dimakanin' },
     { id: 8, icon: require('../../assets/difotoin.png'), label: 'difotoin' },
   ];
+
+
+    const checkAgenStatus = async () => {
+    try {
+      setIsLoadingAgen(true);
+      
+      const userJson = await AsyncStorage.getItem('userData');
+      if (!userJson) {
+        setIsAgen(false);
+        setIsLoadingAgen(false);
+        return;
+      }
+
+      const userObj = JSON.parse(userJson);
+      const userId = userObj.id;
+
+      const response = await axios.get(
+        `${API_URL}/api/users/agen/user/${userId}`,
+        {
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+
+      console.log('====================================');
+      console.log('dddd', response.data);
+      console.log('====================================');
+      setIsAgen(response.data.data?.length > 0);
+      setIsLoadingAgen(false);
+    } catch (error) {
+      console.error('Error checking agen status:', error);
+      setIsAgen(false);
+      setIsLoadingAgen(false);
+    }
+  };
+
+   const getUser = async () => {
+    try {
+      const userJson = await AsyncStorage.getItem('userData');
+      if (userJson) {
+        const userObj = JSON.parse(userJson);
+        console.log('📱 Current User ID:', userObj.id);
+
+        const response = await axios.get(`${API_URL}/api/users`);
+        const users = response.data.data;
+        const currentUser = users.find((e) => e.id === userObj.id);
+
+        if (currentUser) {
+          console.log('✅ User data loaded:', currentUser);
+          setUserData(currentUser);
+          await AsyncStorage.setItem('userData', JSON.stringify(currentUser));
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error getting user:', error);
+    }
+  };
+
+   const formatCurrency = (amount) => {
+    const numAmount = parseFloat(amount);
+    return numAmount.toLocaleString('id-ID', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    });
+  };
+
+
+  useEffect(() => {
+    checkAgenStatus()
+    getUser()
+  }, [])
+  
 
   const bannerImages = [
     require('../../assets/banners.png'),
@@ -85,7 +163,31 @@ export default function HomeTab({navigation}) {
       </View>
 
       {/* Agent Status & Balance */}
-      <View style={styles.statusContainer}>
+
+      
+      {isAgen ?
+        <View style={styles.statusContainer}>
+        <View style={styles.agentCard}>
+          <View>
+<Text style={styles.agentTitle}>Terdaftar Sebagai</Text>
+          <View style={styles.agentBadge}>
+            <Text style={styles.agentText}>Agen Platinum PPOB</Text>
+         
+          </View>
+          </View>
+          
+          <View>
+            <Image source={require('../../assets/verified.png')} style={{width: 20, height: 20, marginLeft: 5, marginTop: 7}} />
+          </View>
+        </View>
+
+        <View style={styles.balanceCard}>
+          <Text style={styles.balanceTitle}>Saldo</Text>
+          <Text style={styles.balanceAmount}>{ `Rp ${formatCurrency(userData.wallet_balance)}` || 'Rp xxxxxx'}</Text>
+        </View>
+      </View>
+      :
+        <View style={styles.statusContainer}>
         <View style={styles.agentCard}>
           <View>
 <Text style={styles.agentTitle}>Daftar Sebagai</Text>
@@ -105,6 +207,8 @@ export default function HomeTab({navigation}) {
           <Text style={styles.balanceAmount}>Rp xx,xxx,xxx</Text>
         </View>
       </View>
+    }
+    
 
       {/* Banner Carousel */}
       <View style={styles.bannerContainer}>
@@ -143,7 +247,7 @@ export default function HomeTab({navigation}) {
       <View style={styles.mainServicesContainer}>
         <View style={styles.servicesGrid}>
           {mainServices.map((service) => (
-            <TouchableOpacity key={service.id} style={styles.mainServiceItem}>
+            <TouchableOpacity key={service.id} style={styles.mainServiceItem} onPress={() => alert('Sedang dalam Pengembangan')}>
               <View style={styles.mainServiceIconContainer}>
                 <Image source={service.icon} style={styles.mainServiceIcon} resizeMode="contain" />
               </View>

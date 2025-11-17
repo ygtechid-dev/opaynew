@@ -18,7 +18,24 @@ import MessageTab from '../tabs/MessageTab';
 import OrderTab from '../tabs/OrderTab';
 import ActivityTab from '../tabs/ActivityTab';
 import ProfileTab from '../tabs/ProfileTab';
-import PulsaDataPage from '../tabs/PulsaDataPage';
+import PulsaDataPage from '../PulsaDataPage';
+import PaymentDetailPage from '../PaymentDetailPage';
+import SetNewPinScreen from '../SetNewPinScreen';
+import TransactionReceiptPage from '../TransactionReceiptPage';
+import PrepaidPage from '../PrepaidPage';
+import PostpaidPage from '../PostpaidPage';
+
+// ✅ Import halaman-halaman baru
+import DaftarAgenPage from '../DaftarAgenPage';
+import TermsConditionsPage from '../TermsConditionsPage';
+import TopUpAmountPage from '../TopUpAmountPage';
+import TopUpWebViewPage from '../TopUpWebViewPage';
+import AgentTopUpWebViewPage from '../AgentTopUpWebViewPage';
+import TopUpPage from '../TopUpPage';
+import TopUpHistoryPage from '../TopUpHistoryPage';
+import AllTransactionPage from '../AllTransactionPage';
+import EditProfileScreen from '../EditProfileScreen';
+import OTPVerificationScreen from '../OTPVerificationScreen';
 
 
 // Import SVG hanya untuk Order tab (icon tengah)
@@ -117,6 +134,7 @@ export default function AppNavigator() {
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {/* Existing Screens */}
         <Stack.Screen name="Splash" component={SplashScreen} />
         <Stack.Screen name="Onboarding" component={OnboardingScreen} />
         <Stack.Screen name="Login" component={LoginScreen} />
@@ -125,7 +143,25 @@ export default function AppNavigator() {
         <Stack.Screen name="LocationAccessScreen" component={LocationAccessScreen} />
         <Stack.Screen name="DashboardPPOB" component={DashboardPPOB} />
         <Stack.Screen name="PulsaDataPage" component={PulsaDataPage} />
+        <Stack.Screen name="PaymentDetailPage" component={PaymentDetailPage} />
+        <Stack.Screen name="SetNewPin" component={SetNewPinScreen} />
+        <Stack.Screen name="PrepaidPage" component={PrepaidPage} />
+        <Stack.Screen name="PostpaidPage" component={PostpaidPage} />
+        <Stack.Screen name="TransactionReceipt" component={TransactionReceiptPage} />
 
+        {/* ✅ New Agent Registration Screens */}
+        <Stack.Screen name="DaftarAgenPage" component={DaftarAgenPage} />
+        <Stack.Screen name="TermsConditionsPage" component={TermsConditionsPage} />
+        
+        {/* ✅ Top Up Screens */}
+        <Stack.Screen name="TopUpAmountPage" component={TopUpAmountPage} />
+        <Stack.Screen name="TopUpWebViewPage" component={TopUpWebViewPage} />
+        <Stack.Screen name="AgentTopUpWebViewPage" component={AgentTopUpWebViewPage} />
+        <Stack.Screen name="TopUpPage" component={TopUpPage} />
+        <Stack.Screen name="TopUpHistoryPage" component={TopUpHistoryPage} />
+        <Stack.Screen name="AllTransactionPage" component={AllTransactionPage} />
+        <Stack.Screen name="EditProfileScreen" component={EditProfileScreen} />
+        <Stack.Screen name="OTPVerificationScreen" component={OTPVerificationScreen} />
 
         {/* HOME SEKARANG PAKAI BOTTOM TABS */}
         <Stack.Screen name="Home" component={BottomTabs} />
@@ -147,12 +183,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    
   },
   tabLabel: {
     fontSize: 11,
     fontFamily: 'Poppins-Regular',
-    marginTop: 5, // Jarak 5px antara icon dan title
+    marginTop: 5,
   },
   tabIcon: {
     marginBottom: 0,
@@ -180,6 +215,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 5,
-    paddingTop: 10
+    paddingTop: 10,
   },
 });
