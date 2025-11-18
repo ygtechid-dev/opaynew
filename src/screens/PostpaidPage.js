@@ -963,7 +963,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-SemiBold',
   },
   emptyState: {
-    flex: 1,
+      height: '500',
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 100,

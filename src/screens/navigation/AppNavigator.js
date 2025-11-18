@@ -36,6 +36,8 @@ import TopUpHistoryPage from '../TopUpHistoryPage';
 import AllTransactionPage from '../AllTransactionPage';
 import EditProfileScreen from '../EditProfileScreen';
 import OTPVerificationScreen from '../OTPVerificationScreen';
+import InfoPageScreen from '../InfoAgenScreen';
+import RequestHapusAkunScreen from '../RequestHapusAkunScreen';
 
 
 // Import SVG hanya untuk Order tab (icon tengah)
@@ -63,7 +65,7 @@ function BottomTabs() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: '#10B981',
+        tabBarActiveTintColor: '#52d0af',
         tabBarInactiveTintColor: '#666',
         tabBarLabelStyle: styles.tabLabel,
         tabBarShowLabel: true,
@@ -162,7 +164,9 @@ export default function AppNavigator() {
         <Stack.Screen name="AllTransactionPage" component={AllTransactionPage} />
         <Stack.Screen name="EditProfileScreen" component={EditProfileScreen} />
         <Stack.Screen name="OTPVerificationScreen" component={OTPVerificationScreen} />
-
+        <Stack.Screen name="InfoPageScreen" component={InfoPageScreen} />
+        <Stack.Screen name="RequestHapusAkunScreen" component={RequestHapusAkunScreen} />
+ 
         {/* HOME SEKARANG PAKAI BOTTOM TABS */}
         <Stack.Screen name="Home" component={BottomTabs} />
       </Stack.Navigator>
@@ -207,7 +211,7 @@ const styles = StyleSheet.create({
     width: 55,
     height: 55,
     borderRadius: 30,
-    backgroundColor: '#10B981',
+    backgroundColor: '#52d0af',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',

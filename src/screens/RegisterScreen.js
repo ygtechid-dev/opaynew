@@ -13,6 +13,7 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import axios from 'axios';
 import { API_URL } from '../context/APIUrl';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function RegisterScreen({ navigation, route }) {
   const { phone } = route.params || {};
@@ -75,8 +76,8 @@ export default function RegisterScreen({ navigation, route }) {
         const { data: userData, token } = response.data;
 
         // Simpan token dan user data ke AsyncStorage jika diperlukan
-        // await AsyncStorage.setItem('userToken', token);
-        // await AsyncStorage.setItem('userData', JSON.stringify(userData));
+        await AsyncStorage.setItem('userToken', token);
+        await AsyncStorage.setItem('userData', JSON.stringify(userData));
 
         Alert.alert(
           'Berhasil',
@@ -183,7 +184,7 @@ export default function RegisterScreen({ navigation, route }) {
         </View>
 
         {/* Referral Code Input */}
-        <View style={styles.inputContainer}>
+        {/* <View style={styles.inputContainer}>
           <Icon name="git-network-outline" size={20} color="#999" style={styles.inputIcon} />
           <TextInput
             placeholder="Kode Referensi (Opsional)"
@@ -193,7 +194,7 @@ export default function RegisterScreen({ navigation, route }) {
             placeholderTextColor="#999"
             editable={!loading}
           />
-        </View>
+        </View> */}
 
         <View style={styles.footer}>
           <TouchableOpacity 

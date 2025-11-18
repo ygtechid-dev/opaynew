@@ -167,7 +167,7 @@ export default function PaymentDetailPage({ route, navigation }) {
         },
         {
           text: 'Isi Saldo',
-          onPress: () => navigation.navigate('TopUp'),
+          onPress: () => navigation.navigate('TopUpPage'),
         },
       ],
       { cancelable: true }

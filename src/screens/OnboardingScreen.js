@@ -1,35 +1,78 @@
-import React, { useRef, useState } from 'react';
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, Image, ImageBackground } from 'react-native';
+import React, { useRef, useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, Image, ImageBackground, ActivityIndicator } from 'react-native';
 import Swiper from 'react-native-swiper';
+import axios from 'axios';
+import { API_URL } from '../context/APIUrl';
+
 const { width, height } = Dimensions.get('window');
 
 export default function OnboardingScreen({ navigation }) {
   const swiperRef = useRef(null);
   const [index, setIndex] = useState(0);
+  const [pages, setPages] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const pages = [
+  // Default hardcode data
+  const defaultPages = [
     { 
       title: "Semua Layanan, Satu Aplikasi", 
       desc: "Belanja, kuliner, transportasi, kirim paket, PPOB & jasa cukup Ditokoku.id. Transaksi aman, cepat, nyaman.",
       image: require('../assets/onboarding1.png'), 
       buttonText: "Lanjutkan",
-      buttonColor: "#FF5F00"
+      buttonColor: "#FF5F00",
+      isLocal: true
     },
     { 
       title: "Dompet Terpadu, Bayar Tanpa Ribet", 
       desc: "Satu saldo untuk semua. Top-up gampang, bayar instan, riwayat jelas, notifikasi real-time. Tetap aman, cepat, nyaman.",
       image: require('../assets/onboarding2.png'), 
       buttonText: "Lanjutkan",
-      buttonColor: "#FF5F00"
+      buttonColor: "#FF5F00",
+      isLocal: true
     },
     { 
       title: "Dekat dengan Bisnis Lokal", 
       desc: "Jelajah UMKM sekitar, kumpulkan poin & tukar voucher, banyak promo tiap hari. Tetap aman, cepat, nyaman.",
       image: require('../assets/onboarding3.png'), 
       buttonText: "Lanjutkan",
-      buttonColor: "#4CAF50"
+      buttonColor: "#4CAF50",
+      isLocal: true
     },
   ];
+
+  useEffect(() => {
+    fetchOnboardingData();
+  }, []);
+
+  const fetchOnboardingData = async () => {
+    try {
+      setIsLoading(true);
+      const response = await axios.get(`${API_URL}/api/onboarding?is_active=1`);
+      
+      if (response.data.status && response.data.data.length > 0) {
+        // Mapping data dari API
+        const apiPages = response.data.data.map((item) => ({
+          title: item.title,
+          desc: item.description,
+          image: { uri: `${API_URL}/uploads/onboarding/${item.image}` },
+          buttonText: "Lanjutkan",
+          buttonColor: "#5DCBAD",
+          isLocal: false
+        }));
+        
+        setPages(apiPages);
+      } else {
+        // Jika data kosong, pakai hardcode
+        setPages(defaultPages);
+      }
+    } catch (error) {
+      console.error('Error fetching onboarding:', error);
+      // Jika error, pakai hardcode
+      setPages(defaultPages);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const goNext = () => {
     if (index === pages.length - 1) {
@@ -42,6 +85,15 @@ export default function OnboardingScreen({ navigation }) {
   const skipOnboarding = () => {
     navigation.replace("Login");
   };
+
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#5DCBAD" />
+        <Text style={styles.loadingText}>Memuat...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
@@ -64,7 +116,7 @@ export default function OnboardingScreen({ navigation }) {
         {pages.map((item, i) => (
           <ImageBackground
             key={i}
-            source={item.image}  // ✅ UBAH DI SINI: i.image → item.image
+            source={item.image}
             style={styles.imageContainer}
             resizeMode="cover"
           >
@@ -93,6 +145,18 @@ export default function OnboardingScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 14,
+    fontFamily: 'PlusJakartaSans-Regular',
+    color: '#666',
+  },
   skipBtn: {
     position: 'absolute',
     top: 50,
@@ -113,7 +177,6 @@ const styles = StyleSheet.create({
   },
   overlay: {
     flex: 1,
-    // overlay gelap dikit biar text keliatan
     justifyContent: 'flex-end',
     paddingBottom: 60
   },
@@ -128,39 +191,36 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     fontFamily: 'PlusJakartaSans-Bold',
     textAlign: 'center',
-    color: '#000000' // ubah jadi putih biar keliatan di gambar
+    color: '#000000'
   },
   desc: { 
     fontSize: 12, 
-    color: 'black', // ubah jadi putih
+    color: 'black',
     textAlign: 'center',
-     fontFamily: 'PlusJakartaSans-Regular',
-     marginBottom: 10,
+    fontFamily: 'PlusJakartaSans-Regular',
+    marginBottom: 10,
   },
   pagination: {
     bottom: 100
   },
   bottom: { 
     paddingHorizontal: 20,
-    
   },
   btn: {
     padding: 12,
     marginBottom: -30,
     borderRadius: 16,
-          height:  52,
+    height: 52,
     alignItems: 'center',
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 5,
-   
   },
   btnText: { 
     color: 'white', 
     fontSize: 16, 
-       fontFamily: 'PlusJakartaSans-SemiBold',
- 
+    fontFamily: 'PlusJakartaSans-SemiBold',
   }
 });

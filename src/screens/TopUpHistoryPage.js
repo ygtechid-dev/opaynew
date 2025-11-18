@@ -71,6 +71,7 @@ export default function AllTransactionPage({ navigation }) {
     return () => {
       stopAutoRefresh();
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoRefreshEnabled, transactions]);
 
   // Auto Refresh Functions
@@ -138,7 +139,10 @@ export default function AllTransactionPage({ navigation }) {
         setTransactions([]);
       }
 
-      const token = await AsyncStorage.getItem('token');
+      const token = await AsyncStorage.getItem('userToken');
+      console.log('====================================');
+      console.log('usss', token);
+      console.log('====================================');
       if (!token) {
         setErrorMessage('Silakan login terlebih dahulu');
         setIsLoading(false);
@@ -1184,8 +1188,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#396EB0',
+    paddingTop: 50,
+    paddingBottom: 20,
+    backgroundColor: '#52d0af',
   },
   headerTitleContainer: {
     flex: 1,

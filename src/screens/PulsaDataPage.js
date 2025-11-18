@@ -297,7 +297,7 @@ useEffect(() => {
               />
             )}
             <View style={styles.productInfo}>
-              <Text style={styles.productName} numberOfLines={1}>
+              <Text style={styles.productName} numberOfLines={3}>
                 {productName}
               </Text>
               <Text style={styles.productPrice}>{displayPrice}</Text>
@@ -335,7 +335,7 @@ useEffect(() => {
           </View>
 
           :
-            <View style={styles.rightSection}>
+      <TouchableOpacity style={styles.rightSection} onPress={() => navigation.push('DaftarAgenPage')}>
             <View>
             <Text style={styles.agenLabel}>
               Daftar Agen Platinum,{'\n'}dapatkan harga murah
@@ -350,7 +350,7 @@ useEffect(() => {
   
             </View>
             
-          </View>
+          </TouchableOpacity>
 }
 
        
@@ -646,10 +646,9 @@ const styles = StyleSheet.create({
     
   },
   emptyState: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 100,
+    height: '500'
   },
   emptyStateText: {
     fontSize: 12,

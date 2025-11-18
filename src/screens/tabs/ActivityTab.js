@@ -23,27 +23,22 @@ export default function ActivityTab({ navigation }) {
             <Icon name="chevron-back" size={28} color="#000" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Aktivitas</Text>
-          <TouchableOpacity style={styles.historyButton}>
-            <Icon name="time-outline" size={28} color="#5DCBAD" />
-          </TouchableOpacity>
+        
         </View>
 
         {/* Search Box */}
         <View style={styles.searchContainer}>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Tampilan Produk"
-            placeholderTextColor="#C5C5C5"
-            value={searchText}
-            onChangeText={setSearchText}
-          />
+         
         </View>
 
+  <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>Belum ada Aktivitas</Text>
+        </View>
         {/* Pesan Lagi Button */}
-        <TouchableOpacity style={styles.pesanLagiButton}>
+        {/* <TouchableOpacity style={styles.pesanLagiButton}>
           <Text style={styles.pesanLagiText}>Pesan Lagi</Text>
           <Icon name="arrow-forward" size={20} color="#5DCBAD" />
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
         {/* Empty State */}
         <ScrollView 
@@ -84,6 +79,11 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'left',
     marginLeft: 10,
+  },
+    emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   historyButton: {
     width: 40,

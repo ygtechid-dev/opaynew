@@ -57,7 +57,7 @@ export default function MessageTab({ navigation }) {
 
         {/* Empty State */}
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>Belum ada Berita</Text>
+          <Text style={styles.emptyText}>Belum ada {activeTab}</Text>
         </View>
       </View>
     </>

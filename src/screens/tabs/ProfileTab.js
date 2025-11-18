@@ -19,6 +19,7 @@ export default function ProfileTab({ navigation }) {
   const [userData, setUserData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [sidikJariActive, setSidikJariActive] = useState(false);
+  const [saldoShow, setSaldoShow] = useState(false); // ✅ State untuk show/hide saldo
 
   useEffect(() => {
     loadUserData();
@@ -35,7 +36,7 @@ export default function ProfileTab({ navigation }) {
         // Fetch latest data from API
         const response = await axios.get(`${API_URL}/api/users/${userObj.id}`);
         
-        if (response.data.status) {
+        if (response.data) {
           setUserData(response.data.data);
           await AsyncStorage.setItem('userData', JSON.stringify(response.data.data));
         }
@@ -100,8 +101,8 @@ export default function ProfileTab({ navigation }) {
         {/* Profile Info */}
         <View style={styles.profileContainer}>
           <View style={styles.avatarContainer}>
-            {userData?.avatar ? (
-              <Image source={{ uri: userData.avatar }} style={styles.avatar} />
+            {userData?.image ? (
+              <Image source={{ uri: API_URL + userData.image }} style={styles.avatar} />
             ) : (
               <View style={styles.avatarPlaceholder}>
                 <Icon name="person" size={50} color="#C5C5C5" />
@@ -120,18 +121,43 @@ export default function ProfileTab({ navigation }) {
           <View style={styles.saldoLeft}>
             <Icon name="wallet" size={32} color="#5DCBAD" />
             <View style={styles.saldoInfo}>
-              <Text style={styles.saldoLabel}>Saldo</Text>
-              <Text style={styles.saldoAmount}>Rp {formatCurrency(userData?.wallet_balance)}</Text>
+              {/* ✅ Saldo Label dengan Icon Toggle */}
+              <View style={styles.saldoLabelContainer}>
+                <Text style={styles.saldoLabel}>Saldo</Text>
+                {saldoShow ? (
+                  <TouchableOpacity onPress={() => setSaldoShow(false)}>
+                    <Image 
+                      source={require('../../assets/saldoshow.png')} 
+                      style={styles.saldoIcon} 
+                    />
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity onPress={() => setSaldoShow(true)}>
+                    <Image 
+                      source={require('../../assets/invisible.png')} 
+                      style={styles.saldoIcon} 
+                    />
+                  </TouchableOpacity>
+                )}
+              </View>
+              
+              {/* ✅ Saldo Amount dengan Show/Hide */}
+              <Text style={styles.saldoAmount}>
+                {saldoShow 
+                  ? `Rp ${formatCurrency(userData?.wallet_balance)}` 
+                  : 'Rp •••••••'
+                }
+              </Text>
             </View>
           </View>
           
           <View style={styles.saldoActions}>
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity style={styles.actionButton} onPress={() => navigation.push('TopUpPage')}>
               <Icon name="add-circle" size={24} color="#5DCBAD" />
               <Text style={styles.actionText}>Isi Saldo</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity style={styles.actionButton} onPress={() => navigation.push('TopUpHistoryPage')}>
               <Icon name="time" size={24} color="#5DCBAD" />
               <Text style={styles.actionText}>Riwayat</Text>
             </TouchableOpacity>
@@ -166,8 +192,12 @@ export default function ProfileTab({ navigation }) {
 
             <TouchableOpacity 
               style={styles.menuItem}
-              onPress={() => Alert.alert('Info', 'Fitur hapus akun dalam pengembangan')}
+              onPress={() =>   navigation.navigate('RequestHapusAkunScreen', {
+            userData: userData,
+            onRequestSuccess: handleLogout
+          })}
             >
+              
               <Icon name="person-remove-outline" size={24} color="#666" />
               <View style={styles.menuContent}>
                 <Text style={styles.menuLabel}>Hapus Akun</Text>
@@ -190,33 +220,58 @@ export default function ProfileTab({ navigation }) {
             </View>
           </View>
         </View>
+        
+       {/* Menu Lainnya */}
+<View style={styles.section}>
+  <TouchableOpacity 
+    style={styles.menuItemSimple}
+    onPress={() => navigation.navigate('InfoPageScreen', {
+      type: 'tentang-kami',
+      title: 'Tentang Kami'
+    })}
+  >
+    <Icon name="information-circle-outline" size={24} color="#666" />
+    <Text style={styles.menuLabelSimple}>Tentang kami</Text>
+    <Icon name="chevron-forward" size={20} color="#C5C5C5" />
+  </TouchableOpacity>
 
-        {/* Menu Lainnya */}
-        <View style={styles.section}>
-          <TouchableOpacity style={styles.menuItemSimple}>
-            <Icon name="information-circle-outline" size={24} color="#666" />
-            <Text style={styles.menuLabelSimple}>Tentang kami</Text>
-            <Icon name="chevron-forward" size={20} color="#C5C5C5" />
-          </TouchableOpacity>
+  <TouchableOpacity 
+    style={styles.menuItemSimple}
+    onPress={() => navigation.navigate('InfoPageScreen', {
+      type: 'bantuan-dukungan',
+      title: 'Bantuan & Dukungan'
+    })}
+  >
+    <Icon name="help-circle-outline" size={24} color="#666" />
+    <Text style={styles.menuLabelSimple}>Bantuan & Dukungan</Text>
+    <Icon name="chevron-forward" size={20} color="#C5C5C5" />
+  </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuItemSimple}>
-            <Icon name="help-circle-outline" size={24} color="#666" />
-            <Text style={styles.menuLabelSimple}>Bantuan & Dukungan</Text>
-            <Icon name="chevron-forward" size={20} color="#C5C5C5" />
-          </TouchableOpacity>
+  <TouchableOpacity 
+    style={styles.menuItemSimple}
+    onPress={() => navigation.navigate('InfoPageScreen', {
+      type: 'syarat-ketentuan',
+      title: 'Syarat & Ketentuan'
+    })}
+  >
+    <Icon name="document-text-outline" size={24} color="#666" />
+    <Text style={styles.menuLabelSimple}>Syarat & Ketentuan</Text>
+    <Icon name="chevron-forward" size={20} color="#C5C5C5" />
+  </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuItemSimple}>
-            <Icon name="document-text-outline" size={24} color="#666" />
-            <Text style={styles.menuLabelSimple}>Syarat & Ketentuan</Text>
-            <Icon name="chevron-forward" size={20} color="#C5C5C5" />
-          </TouchableOpacity>
+  <TouchableOpacity 
+    style={styles.menuItemSimple}
+    onPress={() => navigation.navigate('InfoPageScreen', {
+      type: 'kebijakan-privasi',
+      title: 'Kebijakan Privasi'
+    })}
+  >
+    <Icon name="shield-checkmark-outline" size={24} color="#666" />
+    <Text style={styles.menuLabelSimple}>Kebijakan Privasi</Text>
+    <Icon name="chevron-forward" size={20} color="#C5C5C5" />
+  </TouchableOpacity>
+</View>
 
-          <TouchableOpacity style={styles.menuItemSimple}>
-            <Icon name="shield-checkmark-outline" size={24} color="#666" />
-            <Text style={styles.menuLabelSimple}>Kebijakan Privasi</Text>
-            <Icon name="chevron-forward" size={20} color="#C5C5C5" />
-          </TouchableOpacity>
-        </View>
 
         {/* Logout Button */}
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
@@ -302,16 +357,30 @@ const styles = StyleSheet.create({
   },
   saldoInfo: {
     marginLeft: 12,
+    flex: 1, // ✅ Tambahkan ini
+  },
+  // ✅ Style baru untuk container label + icon
+  saldoLabelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   saldoLabel: {
     fontSize: 12,
     fontFamily: 'Poppins-Regular',
     color: '#000',
   },
+  // ✅ Style untuk icon show/hide
+  saldoIcon: {
+    width: 14,
+    height: 14,
+    tintColor: '#666', // Optional: beri warna
+  },
   saldoAmount: {
     fontSize: 16,
     fontFamily: 'Poppins-SemiBold',
     color: '#000',
+    marginTop: 2, // ✅ Tambahkan spacing
   },
   saldoActions: {
     flexDirection: 'row',

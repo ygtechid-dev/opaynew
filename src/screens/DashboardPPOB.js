@@ -11,9 +11,10 @@ import {
   Dimensions,
   ActivityIndicator,
   RefreshControl,
+  Linking,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { API_URL } from '../context/APIUrl';
+import { API_URL, URL_IMAGE } from '../context/APIUrl';
 
 const { width } = Dimensions.get('window');
 
@@ -27,11 +28,40 @@ export default function DashboardPPOB({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [transactions, setTransactions] = useState([]);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
+  const [dataBannerPPOB, setDataBannerPPOB] = useState([]);
+
 
   const transactionIntervalRef = useRef(null);
 
+
+  const getBanner = async () => {
+    try {
+      const userJson = await AsyncStorage.getItem('userData');
+      if (userJson) {
+        const userObj = JSON.parse(userJson);
+        console.log('📱 Current User ID:', userObj.id);
+
+        const response = await axios.get(`${API_URL}/api/newbanner`);
+        const bannerss = response.data.data;
+   
+const filterDataHeader = bannerss.filter((e) =>
+  e.letak_banner.includes("ppob")
+);
+
+
+
+        console.log('datheadss123', filterDataHeader);
+        setDataBannerPPOB(filterDataHeader)
+      }
+    } catch (error) {
+      console.error('❌ Error getting user:', error);
+    }
+  };
+
+  
   useEffect(() => {
     loadData();
+    getBanner()
 
     // Start auto-refresh transactions every 3 seconds
     startTransactionAutoRefresh();
@@ -291,19 +321,19 @@ export default function DashboardPPOB({ navigation }) {
 >
   {balanceVisible && userData
     ? formatCurrency(userData.wallet_balance)
-    : 'Rp xxxxxx'}
+    : 'Rp ---------'}
 </Text>
 
               </View>
             </View>
 
             <View style={styles.balanceRight}>
-              <TouchableOpacity style={styles.topUpButton} >
+              <TouchableOpacity style={styles.topUpButton} onPress={() => navigation.push('TopUpPage')}>
                 <Icon name="add-circle" size={25} color="#2F318B" />
                 <Text style={styles.topUpText}>Isi Saldo</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.historyButton}>
+              <TouchableOpacity style={styles.historyButton} onPress={() => navigation.push('TopUpHistoryPage')}>
                 <Image
                   source={require('../assets/riwayat-icon.png')}
                   style={{ width: 25, height: 25 }}
@@ -492,9 +522,12 @@ export default function DashboardPPOB({ navigation }) {
               setCurrentBanner(index);
             }}
           >
-            {bannerImages.map((banner, index) => (
+            {dataBannerPPOB.map((banner, index) => (
               <View key={index} style={styles.bannerSlide}>
-                <Image source={banner} style={styles.bannerImage} resizeMode="cover" />
+                 <TouchableOpacity onPress={() => Linking.openURL(banner.url)}>
+                              <Image source={{uri: URL_IMAGE + "/" + banner.image}} style={styles.bannerImage} resizeMode="cover" />
+                
+                               </TouchableOpacity>
               </View>
             ))}
           </ScrollView>

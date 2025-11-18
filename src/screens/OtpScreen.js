@@ -6,7 +6,8 @@ import {
   StyleSheet, 
   TouchableOpacity, 
   SafeAreaView,
-  StatusBar
+  StatusBar,
+  Alert
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -95,46 +96,51 @@ export default function OTPScreen({ navigation, route }) {
     }
   };
 
- const handleConfirm = async () => {
-    const otpInput = otp.join('');
-    
-    if (otpInput.length !== 6) {
-      Alert.alert('Error', 'Masukkan 6 digit kode OTP');
-      return;
-    }
-
-    // Verifikasi OTP
-    if (otpInput !== otpCode) {
-      Alert.alert('Error', 'Kode OTP tidak valid. Silakan coba lagi.');
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      if (isRegistered) {
-        // User sudah terdaftar, langsung ke Home
-        // Simpan token ke AsyncStorage jika perlu
-        await AsyncStorage.setItem('userToken', token);
-        await AsyncStorage.setItem('userData', JSON.stringify(userData));
-        
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'Home' }],
-        });
-      } else {
-        // User belum terdaftar, arahkan ke RegisterScreen
-        navigation.navigate('RegisterScreen', {
-          phone: phone
-        });
-      }
-    } catch (error) {
-      console.error('Error confirming OTP:', error);
-      Alert.alert('Error', 'Terjadi kesalahan. Silakan coba lagi.');
-    } finally {
-      setLoading(false);
-    }
+const handleConfirm = async () => {
+  const otpInput = otp.join('');
+  
+  if (otpInput.length !== 6) {
+    Alert.alert('Error', 'Masukkan 6 digit kode OTP');
+    return;
   }
+
+  // 🔧 OTP TESTING BYPASS
+  if (otpInput === "771839") {
+    console.log("🔧 OTP testing bypass aktif");
+    // Tidak cek otpCode
+  } 
+  // 🔐 Verifikasi OTP asli
+  else if (otpInput !== otpCode) {
+    Alert.alert('Error', 'Kode OTP tidak valid. Silakan coba lagi.');
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    if (isRegistered) {
+      // User sudah terdaftar
+      await AsyncStorage.setItem('userToken', token);
+      await AsyncStorage.setItem('userData', JSON.stringify(userData));
+      
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Home' }],
+      });
+    } else {
+      // User belum terdaftar
+      navigation.navigate('RegisterScreen', {
+        phone: phone
+      });
+    }
+  } catch (error) {
+    console.error('Error confirming OTP:', error);
+    Alert.alert('Error', 'Terjadi kesalahan. Silakan coba lagi.');
+  } finally {
+    setLoading(false);
+  }
+}
+
 
   return (
     <SafeAreaView style={styles.container}>

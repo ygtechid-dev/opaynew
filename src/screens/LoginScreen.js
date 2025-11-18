@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -14,22 +14,116 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import axios from 'axios';
-import {API_URL} from '../context/APIUrl'
+import ReactNativeBiometrics from 'react-native-biometrics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_URL } from '../context/APIUrl';
 
 const FONNTE_TOKEN = 'AmaaJpg2iQCaF54456H8';
+const rnBiometrics = new ReactNativeBiometrics();
 
 export default function LoginScreen({ navigation }) {
   const [phone, setPhone] = useState('');
+  const [phoneError, setPhoneError] = useState('');
   const [agreed, setAgreed] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
+  
+  // ✅ Biometric states
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [biometricType, setBiometricType] = useState('');
+  const [savedUserData, setSavedUserData] = useState(null);
+
+  useEffect(() => {
+    checkBiometricAvailability();
+    checkSavedCredentials();
+  }, []);
+
+  // ✅ Cek ketersediaan biometrik
+  const checkBiometricAvailability = async () => {
+    try {
+      const { available, biometryType } = await rnBiometrics.isSensorAvailable();
+      
+      if (available) {
+        setBiometricAvailable(true);
+        setBiometricType(biometryType);
+        console.log('Biometric available:', biometryType);
+      }
+    } catch (error) {
+      console.error('Error checking biometric:', error);
+    }
+  };
+
+  // ✅ Cek apakah ada user yang tersimpan dengan biometric enabled
+  const checkSavedCredentials = async () => {
+    try {
+      const biometricEnabledStorage = await AsyncStorage.getItem('biometricEnabled');
+      const userData = await AsyncStorage.getItem('userData');
+      
+      if (biometricEnabledStorage === 'true' && userData) {
+        setBiometricEnabled(true);
+        setSavedUserData(JSON.parse(userData));
+      }
+    } catch (error) {
+      console.error('Error checking saved credentials:', error);
+    }
+  };
+
+  // ✅ Login dengan biometric
+  const handleBiometricLogin = async () => {
+    if (!biometricAvailable || !biometricEnabled) {
+      return;
+    }
+
+    try {
+      const { success } = await rnBiometrics.simplePrompt({
+        promptMessage: 'Verifikasi untuk masuk',
+        cancelButtonText: 'Batal',
+      });
+
+      if (success) {
+        setLoading(true);
+        
+        // Login otomatis dengan data tersimpan
+        if (savedUserData && savedUserData.phone) {
+          try {
+            const loginResponse = await axios.post(`${API_URL}/api/users/auth/login`, {
+              phone: savedUserData.phone
+            });
+
+            if (loginResponse.data.status) {
+              const userData = loginResponse.data.data;
+              const token = loginResponse.data.token;
+
+              // Simpan data terbaru
+              await AsyncStorage.setItem('userData', JSON.stringify(userData));
+              await AsyncStorage.setItem('userToken', token);
+
+              // Navigate ke Home
+              navigation.replace('Main');
+            } else {
+              Alert.alert('Error', 'Login gagal. Silakan login manual.');
+            }
+          } catch (error) {
+            console.error('Biometric login error:', error);
+            Alert.alert('Error', 'Login gagal. Silakan login manual.');
+          }
+        }
+      } else {
+        console.log('Biometric authentication cancelled');
+      }
+    } catch (error) {
+      console.error('Biometric error:', error);
+      Alert.alert('Error', 'Autentikasi biometrik gagal');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const sendOTP = async (phoneNumber) => {
     try {
-      // Generate 6 digit OTP
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
       
-      // Format phone number untuk Fonnte (harus dengan format 62xxx)
       let formattedPhone = phoneNumber;
       if (formattedPhone.startsWith('0')) {
         formattedPhone = '62' + formattedPhone.substring(1);
@@ -78,8 +172,7 @@ export default function LoginScreen({ navigation }) {
     setLoading(true);
 
     try {
-      // Format phone number (tambahkan +62 jika dimulai dengan 0)
-      let formattedPhone = phone.replace(/\s/g, ''); // Hapus spasi
+      let formattedPhone = phone.replace(/\s/g, '');
       if (formattedPhone.startsWith('0')) {
         formattedPhone = '+62' + formattedPhone.substring(1);
       } else if (!formattedPhone.startsWith('+62')) {
@@ -91,7 +184,6 @@ export default function LoginScreen({ navigation }) {
       let token = null;
 
       try {
-        // 1. Cek apakah nomor sudah terdaftar
         const loginResponse = await axios.post(`${API_URL}/api/users/auth/login`, {
           phone: formattedPhone
         });
@@ -102,19 +194,15 @@ export default function LoginScreen({ navigation }) {
           token = loginResponse.data.token;
         }
       } catch (error) {
-        // Jika error 404 (nomor belum terdaftar), tetap lanjut kirim OTP
         if (error.response && error.response.status === 404) {
           isRegistered = false;
         } else {
-          // Error lain, throw
           throw error;
         }
       }
 
-      // 2. Kirim OTP via Fonnte (baik terdaftar atau belum)
       const otpCode = await sendOTP(phone);
 
-      // 3. Navigate ke OTP Screen dengan membawa data
       navigation.replace("OtpScreen", {
         phone: formattedPhone,
         otpCode: otpCode,
@@ -136,6 +224,16 @@ export default function LoginScreen({ navigation }) {
     }
   };
 
+  const handlePhoneChange = (text) => {
+    setPhone(text);
+
+    if (text.startsWith('0')) {
+      setPhoneError('Silakan isi dengan awalan 8');
+    } else {
+      setPhoneError('');
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
@@ -144,7 +242,7 @@ export default function LoginScreen({ navigation }) {
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.backBtn}
-          onPress={() => navigation.goBack()}
+          onPress={() => navigation.replace('Onboarding')}
         >
           <Icon name="chevron-back" size={24} color="#000" />
         </TouchableOpacity>
@@ -170,13 +268,17 @@ export default function LoginScreen({ navigation }) {
           <TextInput
             placeholder="XXX XXXX XXXX"
             value={phone}
-            onChangeText={setPhone}
+            onChangeText={handlePhoneChange}
             style={styles.phoneInput}
             keyboardType="phone-pad"
             maxLength={15}
             editable={!loading}
           />
         </View>
+        
+        {phoneError !== '' && (
+          <Text style={styles.errorText}>{phoneError}</Text>
+        )}
 
         {/* Checkbox Agreement */}
         <TouchableOpacity 
@@ -202,7 +304,7 @@ export default function LoginScreen({ navigation }) {
           </Text>
         </TouchableOpacity>
 
-        {/* Button */}
+        {/* Button Login Normal */}
         <TouchableOpacity 
           style={[styles.btn, (!agreed || loading) && styles.btnDisabled]} 
           onPress={doLogin}
@@ -214,6 +316,40 @@ export default function LoginScreen({ navigation }) {
             <Text style={styles.btnText}>Lanjut</Text>
           )}
         </TouchableOpacity>
+
+        {/* ✅ Biometric Login Button */}
+        {biometricAvailable && biometricEnabled && savedUserData && (
+          <>
+            <View style={styles.dividerContainer}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>atau</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <TouchableOpacity 
+              style={styles.biometricBtn}
+              onPress={handleBiometricLogin}
+              disabled={loading}
+            >
+              <Icon 
+                name={biometricType === 'FaceID' ? 'scan' : 'finger-print'} 
+                size={24} 
+                color="#5DCBAD" 
+              />
+              <Text style={styles.biometricBtnText}>
+                Masuk dengan {biometricType === 'FaceID' ? 'Face ID' : 'Sidik Jari'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Info user tersimpan */}
+            <View style={styles.savedUserInfo}>
+              <Icon name="person-circle-outline" size={20} color="#666" />
+              <Text style={styles.savedUserText}>
+                Login sebagai {savedUserData.f_name || savedUserData.phone}
+              </Text>
+            </View>
+          </>
+        )}
       </View>
 
       {/* Modal Syarat & Ketentuan */}
@@ -225,7 +361,6 @@ export default function LoginScreen({ navigation }) {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            {/* Modal Header */}
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Syarat & Ketentuan</Text>
               <TouchableOpacity 
@@ -236,7 +371,6 @@ export default function LoginScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
-            {/* Modal Body */}
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
               <Text style={styles.modalText}>
                 <Text style={styles.modalSubtitle}>1. Ketentuan Umum{'\n'}</Text>
@@ -256,7 +390,6 @@ export default function LoginScreen({ navigation }) {
               </Text>
             </ScrollView>
 
-            {/* Modal Footer */}
             <TouchableOpacity 
               style={styles.modalBtn}
               onPress={() => {
@@ -307,12 +440,13 @@ const styles = StyleSheet.create({
   phoneContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#5DCBAD',
     borderRadius: 12,
     paddingHorizontal: 15,
-    paddingVertical: 15,
-    marginBottom: 20
+    paddingVertical: 10,
+    marginBottom: 20,
+    height: 70
   },
   flagSection: {
     flexDirection: 'row',
@@ -356,6 +490,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 30
+  },
+  errorText: {
+    color: 'red',
+    marginTop: -14,
+    marginBottom: 30,
+    fontSize: 12,
   },
   checkbox: {
     width: 18,
@@ -403,6 +543,53 @@ const styles = StyleSheet.create({
     textAlign: 'center', 
     fontFamily: 'Poppins-SemiBold',
     fontSize: 18,
+  },
+
+  // ✅ Biometric Styles
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E0E0E0',
+  },
+  dividerText: {
+    marginHorizontal: 15,
+    fontSize: 14,
+    color: '#999',
+    fontFamily: 'Poppins-Regular',
+  },
+  biometricBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF',
+    borderWidth: 2,
+    borderColor: '#5DCBAD',
+    padding: 11,
+    height: 52,
+    borderRadius: 12,
+    gap: 10,
+  },
+  biometricBtnText: {
+    color: '#5DCBAD',
+    fontSize: 16,
+    fontFamily: 'Poppins-SemiBold',
+  },
+  savedUserInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 15,
+    gap: 8,
+  },
+  savedUserText: {
+    fontSize: 13,
+    color: '#666',
+    fontFamily: 'Poppins-Regular',
   },
   
   // Modal Styles

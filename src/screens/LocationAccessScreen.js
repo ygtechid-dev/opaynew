@@ -51,120 +51,136 @@ export default function LocationAccessScreen({ navigation, route }) {
       return true;
     }
   };
+const DEFAULT_LOCATION = {
+  latitude: -6.200000,    // Jakarta (ubah kalau perlu)
+  longitude: 106.816666
+};
 
-  const getCurrentLocation = () => {
-    return new Promise((resolve, reject) => {
-      Geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          resolve({ latitude, longitude });
-        },
-        (error) => {
-          console.error('Error getting location:', error);
-          reject(error);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 15000,
-          maximumAge: 10000
+const getCurrentLocation = () => {
+  return new Promise((resolve) => {
+
+    Geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude
+        });
+      },
+      (error) => {
+        console.log("Error lokasi:", error);
+
+        // Jika timeout → pakai lokasi default
+        if (error.code === 3) {  // 3 = TIMEOUT
+          console.log("Lokasi timeout → pakai default");
+          resolve(DEFAULT_LOCATION);
+          return;
         }
-      );
-    });
-  };
 
-  const handleAllowLocation = async () => {
-    setLoading(true);
-
-    try {
-      // 1. Request permission
-      const hasPermission = await requestLocationPermission();
-      
-      if (!hasPermission) {
-        setLoading(false);
-        // User bisa skip dan tetap lanjut ke Home
-        Alert.alert(
-          'Lanjutkan Tanpa Lokasi?',
-          'Anda dapat mengaktifkan lokasi nanti di pengaturan.',
-          [
-            {
-              text: 'Coba Lagi',
-              onPress: () => handleAllowLocation()
-            },
-            {
-              text: 'Lanjutkan',
-              onPress: () => {
-                navigation.reset({
-                  index: 0,
-                  routes: [{ 
-                    name: 'Home',
-                    params: {
-                      userData,
-                      token,
-                      location: null
-                    }
-                  }],
-                });
-              }
-            }
-          ]
-        );
-        return;
+        // Error lain → tetap fallback default
+        resolve(DEFAULT_LOCATION);
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 4000,
+        maximumAge: 10000
       }
+    );
 
-      // 2. Get current location
-      const location = await getCurrentLocation();
-      
-      console.log('Location obtained:', location);
+  });
+};
 
-      // 3. Simpan location ke AsyncStorage atau state management jika perlu
-      // await AsyncStorage.setItem('userLocation', JSON.stringify(location));
+ const handleAllowLocation = async () => {
+  setLoading(true);
 
-      // 4. Navigate ke Home dengan data location
-      navigation.reset({
-        index: 0,
-        routes: [{ 
-          name: 'Home',
-          params: {
-            userData,
-            token,
-            location
-          }
-        }],
-      });
+  try {
+    // 1. Request Permission
+    const hasPermission = await requestLocationPermission();
 
-    } catch (error) {
-      console.error('Location error:', error);
-      
+    if (!hasPermission) {
+      setLoading(false);
+
       Alert.alert(
-        'Gagal Mendapatkan Lokasi',
-        'Tidak dapat mengakses lokasi Anda. Pastikan GPS aktif dan coba lagi.',
+        'Tidak Ada Izin Lokasi',
+        'Tidak dapat mengakses lokasi. Anda dapat melanjutkan tanpa lokasi.',
         [
           {
             text: 'Coba Lagi',
             onPress: () => handleAllowLocation()
           },
           {
-            text: 'Lewati',
+            text: 'Lanjutkan Tanpa Lokasi',
             onPress: () => {
               navigation.reset({
                 index: 0,
-                routes: [{ 
+                routes: [{
                   name: 'Home',
                   params: {
                     userData,
                     token,
-                    location: null
+                    location: DEFAULT_LOCATION   // Fallback di sini juga
                   }
-                }],
+                }]
               });
             }
           }
         ]
       );
-    } finally {
-      setLoading(false);
+      return;
     }
-  };
+
+    // 2. Get location (ini sudah fallback kalau timeout)
+    const location = await getCurrentLocation();
+
+    console.log('Location obtained:', location);
+
+    // 3. Navigate ke Home dengan lokasi
+    navigation.reset({
+      index: 0,
+      routes: [{
+        name: 'Home',
+        params: {
+          userData,
+          token,
+          location: location || DEFAULT_LOCATION
+        }
+      }],
+    });
+
+  } catch (error) {
+    console.error('Location error:', error);
+
+    Alert.alert(
+      'Tidak Bisa Mengambil Lokasi',
+      'GPS timeout / lokasi tidak tersedia. Gunakan lokasi default?',
+      [
+        {
+          text: 'Coba Lagi',
+          onPress: () => handleAllowLocation()
+        },
+        {
+          text: 'Gunakan Lokasi Default',
+          onPress: () => {
+            navigation.reset({
+              index: 0,
+              routes: [{
+                name: 'Home',
+                params: {
+                  userData,
+                  token,
+                  location: DEFAULT_LOCATION   // fallback terakhir
+                }
+              }]
+            });
+          }
+        }
+      ]
+    );
+
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const handleSkip = () => {
     Alert.alert(

@@ -286,7 +286,7 @@ setUniqueProductTypes(uniqueBrands);
             )}
 
             <View style={styles.productInfo}>
-              <Text style={styles.productName} numberOfLines={1}>
+              <Text style={styles.productName} numberOfLines={2}>
                 {productName}
               </Text>
               <Text style={styles.productPrice}>{displayPrice}</Text>
@@ -313,7 +313,7 @@ setUniqueProductTypes(uniqueBrands);
               </View>
             </View>
           ) : (
-            <View style={styles.rightSection}>
+            <TouchableOpacity style={styles.rightSection} onPress={() => navigation.push('DaftarAgenPage')}>
               <View>
                 <Text style={styles.agenLabel}>
                   Daftar Agen Platinum,{'\n'}dapatkan harga murah
@@ -325,7 +325,7 @@ setUniqueProductTypes(uniqueBrands);
                   </View>
                 </View>
               </View>
-            </View>
+            </TouchableOpacity>
           )}
         </View>
       </TouchableOpacity>
@@ -679,6 +679,8 @@ const styles = StyleSheet.create({
     color: '#000',
     marginBottom: 0,
     fontFamily: 'Poppins-Regular',
+    flexWrap: 'wrap'
+
   },
   productPrice: {
     fontSize: 16,
@@ -724,7 +726,7 @@ const styles = StyleSheet.create({
     marginLeft: 30,
   },
   emptyState: {
-    flex: 1,
+       height: '500',
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 100,

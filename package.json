@@ -30,6 +30,7 @@
     "react": "19.1.1",
     "react-native": "0.82.1",
     "react-native-asset": "^2.1.1",
+    "react-native-biometrics": "^3.0.1",
     "react-native-calendars": "^1.1313.0",
     "react-native-collapsible": "^1.6.2",
     "react-native-contacts": "^8.0.7",

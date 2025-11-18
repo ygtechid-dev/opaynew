@@ -11,14 +11,17 @@ import {
   Alert,
   ActivityIndicator,
   Switch,
+  Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
+import ReactNativeBiometrics from 'react-native-biometrics';
 import { API_URL } from '../context/APIUrl';
 
 const FONNTE_TOKEN = 'AmaaJpg2iQCaF54456H8';
-
+const rnBiometrics = new ReactNativeBiometrics();
 
 export default function EditProfileScreen({ navigation, route }) {
   const { userData: initialUserData } = route.params || {};
@@ -29,24 +32,192 @@ export default function EditProfileScreen({ navigation, route }) {
   const [sidikJariActive, setSidikJariActive] = useState(false);
   const [userId, setUserId] = useState(null);
   const [originalPhone, setOriginalPhone] = useState('');
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [currentAvatar, setCurrentAvatar] = useState(null);
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricType, setBiometricType] = useState('');
 
   useEffect(() => {
     if (initialUserData) {
+      console.log('====================================');
+      console.log('inudat', initialUserData);
+      console.log('====================================');
       setPhone(initialUserData.phone || '');
       setEmail(initialUserData.email || '');
       setUserId(initialUserData.id);
       setOriginalPhone(initialUserData.phone || '');
+      setCurrentAvatar(API_URL + initialUserData.image || null);
     }
+    checkBiometricAvailability();
+    loadBiometricSetting();
   }, [initialUserData]);
+
+  // ✅ Cek ketersediaan biometrik
+  const checkBiometricAvailability = async () => {
+    try {
+      const { available, biometryType } = await rnBiometrics.isSensorAvailable();
+      
+      if (available) {
+        setBiometricAvailable(true);
+        setBiometricType(biometryType);
+        console.log('Biometric available:', biometryType);
+      } else {
+        setBiometricAvailable(false);
+        console.log('Biometric not available');
+      }
+    } catch (error) {
+      console.error('Error checking biometric:', error);
+      setBiometricAvailable(false);
+    }
+  };
+
+  // ✅ Load biometric setting dari AsyncStorage
+  const loadBiometricSetting = async () => {
+    try {
+      const biometricEnabled = await AsyncStorage.getItem('biometricEnabled');
+      if (biometricEnabled === 'true') {
+        setSidikJariActive(true);
+      }
+    } catch (error) {
+      console.error('Error loading biometric setting:', error);
+    }
+  };
+
+  // ✅ Toggle biometric
+  const handleBiometricToggle = async (value) => {
+    if (!biometricAvailable) {
+      Alert.alert(
+        'Tidak Tersedia',
+        'Perangkat Anda tidak mendukung autentikasi biometrik'
+      );
+      return;
+    }
+
+    if (value) {
+      // Aktifkan biometrik - verifikasi dulu
+      try {
+        const { success } = await rnBiometrics.simplePrompt({
+          promptMessage: 'Verifikasi identitas Anda',
+          cancelButtonText: 'Batal',
+        });
+
+        if (success) {
+          setSidikJariActive(true);
+          await AsyncStorage.setItem('biometricEnabled', 'true');
+          Alert.alert('Berhasil', 'Autentikasi biometrik berhasil diaktifkan');
+        } else {
+          Alert.alert('Gagal', 'Verifikasi biometrik gagal');
+        }
+      } catch (error) {
+        console.error('Biometric error:', error);
+        Alert.alert('Error', 'Terjadi kesalahan saat verifikasi biometrik');
+      }
+    } else {
+      // Nonaktifkan biometrik
+      Alert.alert(
+        'Nonaktifkan Biometrik',
+        'Apakah Anda yakin ingin menonaktifkan autentikasi biometrik?',
+        [
+          { text: 'Batal', style: 'cancel' },
+          {
+            text: 'Nonaktifkan',
+            style: 'destructive',
+            onPress: async () => {
+              setSidikJariActive(false);
+              await AsyncStorage.setItem('biometricEnabled', 'false');
+              Alert.alert('Berhasil', 'Autentikasi biometrik berhasil dinonaktifkan');
+            },
+          },
+        ]
+      );
+    }
+  };
+
+  // ✅ Pilih foto dari galeri atau kamera
+  const selectImage = () => {
+    Alert.alert(
+      'Pilih Foto',
+      'Pilih sumber foto profil',
+      [
+        {
+          text: 'Kamera',
+          onPress: () => openCamera(),
+        },
+        {
+          text: 'Galeri',
+          onPress: () => openGallery(),
+        },
+        {
+          text: 'Batal',
+          style: 'cancel',
+        },
+      ]
+    );
+  };
+
+  // ✅ Buka kamera
+  const openCamera = () => {
+    const options = {
+      mediaType: 'photo',
+      quality: 0.8,
+      maxWidth: 800,
+      maxHeight: 800,
+      saveToPhotos: false,
+    };
+
+    launchCamera(options, (response) => {
+      if (response.didCancel) {
+        console.log('User cancelled camera');
+      } else if (response.errorCode) {
+        Alert.alert('Error', 'Gagal membuka kamera');
+      } else if (response.assets && response.assets[0]) {
+        setSelectedImage(response.assets[0]);
+      }
+    });
+  };
+
+  // ✅ Buka galeri
+  const openGallery = () => {
+    const options = {
+      mediaType: 'photo',
+      quality: 0.8,
+      maxWidth: 800,
+      maxHeight: 800,
+    };
+
+    launchImageLibrary(options, (response) => {
+      if (response.didCancel) {
+        console.log('User cancelled image picker');
+      } else if (response.errorCode) {
+        Alert.alert('Error', 'Gagal membuka galeri');
+      } else if (response.assets && response.assets[0]) {
+        setSelectedImage(response.assets[0]);
+      }
+    });
+  };
+
+  // ✅ Hapus foto
+  const removeAvatar = () => {
+    Alert.alert(
+      'Hapus Foto',
+      'Apakah Anda yakin ingin menghapus foto profil?',
+      [
+        { text: 'Batal', style: 'cancel' },
+        {
+          text: 'Hapus',
+          style: 'destructive',
+          onPress: () => {
+            setSelectedImage(null);
+            setCurrentAvatar(null);
+          },
+        },
+      ]
+    );
+  };
 
   const sendOTP = async (phoneNumber) => {
     try {
-      // Generate 6 digit OTP
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      
-      // Format phone number untuk Fonnte (harus dengan format 62xxx)
-     
-
       const message = `Kode OTP Ditokoku Anda: ${otp}\n\nJangan berikan kode ini kepada siapapun. Kode berlaku selama 5 menit.`;
 
       const response = await axios.post(
@@ -63,8 +234,7 @@ export default function EditProfileScreen({ navigation, route }) {
         }
       );
 
-      console.log('ddd', response.data);
-      
+      console.log('OTP sent:', response.data);
 
       if (response.data) {
         return otp;
@@ -84,27 +254,21 @@ export default function EditProfileScreen({ navigation, route }) {
         return;
       }
 
-      // Cek apakah nomor HP berubah
       const phoneChanged = phone !== originalPhone;
 
       if (phoneChanged) {
-        // Jika nomor HP berubah, kirim OTP dulu
         setIsLoading(true);
         
         try {
           const otpCode = await sendOTP(phone);
           setIsLoading(false);
 
-
-
-          // Navigate ke OTP screen dengan callback
           navigation.navigate('OTPVerificationScreen', {
             phone: phone,
             email: email,
             userData: initialUserData,
             generatedOTP: otpCode,
             onVerificationSuccess: async () => {
-              // Setelah OTP berhasil, baru update profile
               await updateProfile();
             }
           });
@@ -113,7 +277,6 @@ export default function EditProfileScreen({ navigation, route }) {
           Alert.alert('Error', 'Gagal mengirim kode OTP. Silakan coba lagi.');
         }
       } else {
-        // Jika nomor HP tidak berubah, langsung update
         await updateProfile();
       }
     } catch (error) {
@@ -122,21 +285,50 @@ export default function EditProfileScreen({ navigation, route }) {
     }
   };
 
+  // ✅ Update profile dengan foto
   const updateProfile = async () => {
     try {
       setIsLoading(true);
 
+      // Buat FormData untuk upload image
+      const formData = new FormData();
+      
+      formData.append('phone', phone.trim());
+      formData.append('email', email.trim() || '');
+
+      // ✅ Tambahkan image jika ada
+      if (selectedImage) {
+        const imageFile = {
+          uri: Platform.OS === 'android' 
+            ? selectedImage.uri 
+            : selectedImage.uri.replace('file://', ''),
+          type: selectedImage.type || 'image/jpeg',
+          name: selectedImage.fileName || `profile_${userId}_${Date.now()}.jpg`,
+        };
+        formData.append('image', imageFile);
+      } else if (currentAvatar === null) {
+        // Jika foto dihapus
+        formData.append('remove_image', 'true');
+      }
+
       const response = await axios.patch(
         `${API_URL}/api/users/profile/${userId}`,
+        formData,
         {
-          phone: phone.trim(),
-          email: email.trim() || null,
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
         }
       );
 
       if (response.data.status) {
-        // Update local storage
-        const updatedUser = { ...initialUserData, phone, email };
+        // Update local storage dengan data baru
+        const updatedUser = { 
+          ...initialUserData, 
+          phone, 
+          email,
+          image: response.data.data?.image || currentAvatar 
+        };
         await AsyncStorage.setItem('userData', JSON.stringify(updatedUser));
 
         Alert.alert('Sukses', 'Profile berhasil diperbarui', [
@@ -156,21 +348,67 @@ export default function EditProfileScreen({ navigation, route }) {
     }
   };
 
-  const handleDeleteAccount = () => {
+const handleDeleteAccount = () => {
+  Alert.alert(
+    'Hapus Akun',
+    'Apakah Anda yakin ingin mengajukan penghapusan akun? Tim kami akan menghubungi Anda dalam 1x24 jam untuk konfirmasi.',
+    [
+      { text: 'Batal', style: 'cancel' },
+      {
+        text: 'Ajukan Penghapusan',
+        style: 'destructive',
+        onPress: () => {
+          // Navigate ke screen form request hapus akun
+          navigation.navigate('RequestHapusAkunScreen', {
+            userData: initialUserData,
+            onRequestSuccess: handleLogout
+          });
+        },
+      },
+    ]
+  );
+};
+
+// Fungsi untuk logout setelah request berhasil
+const handleLogout = async () => {
+  try {
+    await AsyncStorage.removeItem('userData');
+    await AsyncStorage.removeItem('userToken');
+    await AsyncStorage.removeItem('biometricEnabled');
+    
     Alert.alert(
-      'Hapus Akun',
-      'Apakah Anda yakin ingin menghapus akun? Tindakan ini tidak dapat dibatalkan.',
+      'Berhasil',
+      'Pengajuan hapus akun berhasil dikirim. Anda akan keluar dari aplikasi.',
       [
-        { text: 'Batal', style: 'cancel' },
         {
-          text: 'Hapus',
-          style: 'destructive',
+          text: 'OK',
           onPress: () => {
-            Alert.alert('Info', 'Fitur hapus akun dalam pengembangan');
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Login' }],
+            });
           },
         },
       ]
     );
+  } catch (error) {
+    console.error('Error logout:', error);
+  }
+};
+
+  // ✅ Tampilkan avatar (prioritas: selectedImage > currentAvatar > placeholder)
+  const renderAvatar = () => {
+    if (selectedImage) {
+      return <Image source={{ uri: selectedImage.uri }} style={styles.avatar} />;
+    } else if (currentAvatar) {
+      return <Image source={{ uri: currentAvatar }} style={styles.avatar} />;
+    } else {
+      return (
+        <View style={styles.avatarPlaceholder}>
+          <Icon name="person" size={50} color="#C5C5C5" />
+        </View>
+      );
+    }
   };
 
   return (
@@ -190,23 +428,31 @@ export default function EditProfileScreen({ navigation, route }) {
           {/* Profile Picture */}
           <View style={styles.profileContainer}>
             <View style={styles.avatarWrapper}>
-              {initialUserData?.avatar ? (
-                <Image source={{ uri: initialUserData.avatar }} style={styles.avatar} />
-              ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <Icon name="person" size={50} color="#C5C5C5" />
-                </View>
-              )}
+              {renderAvatar()}
               
-              <TouchableOpacity style={styles.removeAvatarButton}>
-                <Icon name="close" size={20} color="#FFF" />
+              {/* ✅ Button untuk ganti foto */}
+              <TouchableOpacity 
+                style={styles.editAvatarButton}
+                onPress={selectImage}
+              >
+                <Icon name="camera" size={18} color="#FFF" />
               </TouchableOpacity>
+
+              {/* ✅ Button untuk hapus foto - hanya muncul jika ada foto */}
+              {(selectedImage || currentAvatar) && (
+                <TouchableOpacity 
+                  style={styles.removeAvatarButton}
+                  onPress={removeAvatar}
+                >
+                  <Icon name="close" size={20} color="#FFF" />
+                </TouchableOpacity>
+              )}
             </View>
 
             <Text style={styles.userName}>
               {initialUserData?.f_name || ''} {initialUserData?.l_name || ''}
             </Text>
-            <Text style={styles.memberType}>Basic Member</Text>
+            {/* <Text style={styles.memberType}>Basic Member</Text> */}
           </View>
 
           {/* Form Section */}
@@ -253,18 +499,28 @@ export default function EditProfileScreen({ navigation, route }) {
               <Icon name="chevron-forward" size={20} color="#C5C5C5" />
             </TouchableOpacity>
 
-            {/* Sidik Jari */}
+            {/* Sidik Jari - dengan status ketersediaan */}
             <View style={styles.formItem}>
               <Icon name="finger-print-outline" size={24} color="#666" />
               <View style={styles.formContent}>
-                <Text style={styles.formLabel}>Sidik Jari</Text>
-                <Text style={styles.formSubLabel}>Aktif</Text>
+                <Text style={styles.formLabel}>
+                  {biometricType === 'FaceID' ? 'Face ID' : 'Sidik Jari'}
+                </Text>
+                <Text style={styles.formSubLabel}>
+                  {!biometricAvailable 
+                    ? 'Tidak tersedia di perangkat ini' 
+                    : sidikJariActive 
+                      ? 'Aktif' 
+                      : 'Nonaktif'
+                  }
+                </Text>
               </View>
               <Switch
                 value={sidikJariActive}
-                onValueChange={setSidikJariActive}
+                onValueChange={handleBiometricToggle}
                 trackColor={{ false: '#D9D9D9', true: '#5DCBAD' }}
                 thumbColor="#FFF"
+                disabled={!biometricAvailable}
               />
             </View>
           </View>
@@ -343,9 +599,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  removeAvatarButton: {
+  // ✅ Button edit foto (kamera icon)
+  editAvatarButton: {
     position: 'absolute',
     right: 0,
+    bottom: 0,
+    backgroundColor: '#5DCBAD',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#F9F9F9',
+  },
+  // ✅ Button hapus foto (X icon)
+  removeAvatarButton: {
+    position: 'absolute',
+    left: 0,
     bottom: 0,
     backgroundColor: '#FF6B6B',
     width: 32,
@@ -353,17 +624,19 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#F9F9F9',
   },
   userName: {
     fontSize: 20,
     fontFamily: 'Poppins-SemiBold',
-    color: '#C5C5C5',
+    color: '#000',
     marginBottom: 5,
   },
   memberType: {
     fontSize: 14,
     fontFamily: 'Poppins-Regular',
-    color: '#C5C5C5',
+    color: '#999',
   },
   formContainer: {
     backgroundColor: '#FFF',
