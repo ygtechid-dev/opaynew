@@ -1,3 +1,4 @@
+/* eslint-disable react/no-unstable-nested-components */
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -8,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  TextInput,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
@@ -20,14 +22,17 @@ export default function PinVerificationModal({
   visible,
   onClose,
   product,
+    isAgens,
   phoneNumber,
   provider,
   providerLogo,
+
   navigation,
 }) {
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const maxPinLength = 6;
+   const [walletDeducted, setWalletDeducted] = useState(new Set());
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -44,11 +49,10 @@ export default function PinVerificationModal({
     
     if (visible) {
       console.log('Modal is visible, initializing...');
-      setIsLoading(true); // Reset loading state
+      setIsLoading(true);
       initializePage();
     } else {
       console.log('Modal is hidden, resetting states...');
-      // Reset states when modal closes
       setPin('');
       setConfirmPin('');
       setIsConfirmPinMode(false);
@@ -143,6 +147,290 @@ export default function PinVerificationModal({
         attempts_remaining: errorData.attempts_remaining,
       };
     }
+  };
+
+ const sendOTP = async (phoneNumber) => {
+  try {
+const FONNTE_TOKEN = 'AmaaJpg2iQCaF54456H8';
+
+    // Generate OTP 6 digit
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Format nomor: hapus 0 di depan, tambahkan country code 62
+    let formattedPhone = phoneNumber;
+    if (formattedPhone.startsWith('0')) {
+      formattedPhone = '62' + formattedPhone.slice(1);
+    } else if (!formattedPhone.startsWith('62')) {
+      formattedPhone = '62' + formattedPhone;
+    }
+
+    const message = `Kode OTP Ditokoku: ${otp}. Jaga kerahasiaan kode. Tim Ditokoku tidak pernah meminta OTP melalui kanal apa pun. Jika tidak merasa meminta OTP, segera abaikan pesan ini. Segala risiko, kerugian, dan/atau penyalahgunaan yang timbul karena membagikan kode, kelalaian menjaga OTP, atau penggunaan oleh pihak ketiga berada di luar tanggung jawab Ditokoku`;
+
+    const response = await axios.post(
+      'https://api.fonnte.com/send',
+      {
+        target: formattedPhone,
+        message: message,
+      },
+      {
+        headers: {
+          'Authorization': FONNTE_TOKEN,
+        }
+      }
+    );
+
+    console.log('Fonnte Response:', response.data);
+
+    if (response.data && response.data.status !== false) {
+      console.log('✅ OTP sent successfully via Fonnte:', otp);
+      return otp; // Return OTP untuk digunakan di verifikasi
+    } else {
+      throw new Error(response.data?.reason || 'Gagal mengirim OTP via Fonnte');
+    }
+  } catch (error) {
+    console.error('Send OTP Error:', error);
+    if (error.response) {
+      console.error('Fonnte Error Response:', error.response.data);
+      throw new Error(error.response.data?.reason || 'Gagal mengirim OTP');
+    }
+    throw new Error('Gagal mengirim OTP: ' + error.message);
+  }
+};
+
+  const updatePin = async (userId, newPin) => {
+    try {
+      const response = await axios.put(`${API_URL}/api/pin/update`, {
+        user_id: userId,
+        new_pin: newPin,
+      });
+
+      console.log('PIN Update Response:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('PIN Update Error:', error);
+      return {
+        success: false,
+        error: error.response?.data?.error || 'Failed to update PIN',
+      };
+    }
+  };
+
+  const showForgotPinFlow = async () => {
+    if (!userPhone || userPhone.length === 0) {
+      showErrorDialog('Error', 'Nomor telepon tidak ditemukan');
+      return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      const generatedOtp = await sendOTP(userPhone);
+      
+      setIsProcessing(false);
+
+      showOTPDialog(generatedOtp);
+    } catch (error) {
+      setIsProcessing(false);
+      showErrorDialog('Error', 'Gagal mengirim OTP: ' + error.message);
+    }
+  };
+
+  const showOTPDialog = (correctOtp) => {
+    let enteredOtp = '';
+
+    Alert.prompt(
+      'Masukkan Kode OTP',
+      `Kode OTP telah dikirim ke ${userPhone}`,
+      [
+        {
+          text: 'Batal',
+          style: 'cancel',
+        },
+        {
+          text: 'Verifikasi',
+          onPress: (text) => {
+            enteredOtp = text || '';
+            
+            if (enteredOtp.length !== 6) {
+              showErrorDialog('Error', 'Masukkan 6 digit OTP');
+              return;
+            }
+
+            if (enteredOtp === correctOtp) {
+              showSetNewPinDialog();
+            } else {
+              showErrorDialog('Error', 'Kode OTP salah');
+            }
+          },
+        },
+      ],
+      'plain-text',
+      '',
+      'numeric'
+    );
+  };
+
+  const showSetNewPinDialog = () => {
+    let newPin = '';
+    let confirmNewPin = '';
+    let isConfirmMode = false;
+
+    const NewPinModal = () => {
+      const [localNewPin, setLocalNewPin] = useState('');
+      const [localConfirmPin, setLocalConfirmPin] = useState('');
+      const [localIsConfirmMode, setLocalIsConfirmMode] = useState(false);
+      const [isUpdating, setIsUpdating] = useState(false);
+
+      const onNumberPress = (number) => {
+        if (isUpdating) return;
+
+        if (localIsConfirmMode) {
+          if (localConfirmPin.length < 6) {
+            const newConfirm = localConfirmPin + number;
+            setLocalConfirmPin(newConfirm);
+
+            if (newConfirm.length === 6) {
+              setTimeout(async () => {
+                if (localNewPin === newConfirm) {
+                  setIsUpdating(true);
+                  const result = await updatePin(userId, localNewPin);
+                  
+                  Alert.dismiss();
+                  
+                  if (result.success === true) {
+                    showSuccessDialog(
+                      'PIN Berhasil Diubah',
+                      'PIN Anda telah berhasil diubah',
+                      () => {}
+                    );
+                  } else {
+                    showErrorDialog('Error', result.error || 'Gagal mengubah PIN');
+                  }
+                } else {
+                  showErrorDialog('PIN Tidak Cocok', 'PIN yang Anda masukkan tidak sama');
+                  setLocalNewPin('');
+                  setLocalConfirmPin('');
+                  setLocalIsConfirmMode(false);
+                }
+              }, 300);
+            }
+          }
+        } else {
+          if (localNewPin.length < 6) {
+            const newPinValue = localNewPin + number;
+            setLocalNewPin(newPinValue);
+
+            if (newPinValue.length === 6) {
+              setTimeout(() => {
+                setLocalIsConfirmMode(true);
+              }, 300);
+            }
+          }
+        }
+      };
+
+      const onDeletePress = () => {
+        if (isUpdating) return;
+
+        if (localIsConfirmMode) {
+          if (localConfirmPin.length > 0) {
+            setLocalConfirmPin(localConfirmPin.slice(0, -1));
+          }
+        } else {
+          if (localNewPin.length > 0) {
+            setLocalNewPin(localNewPin.slice(0, -1));
+          }
+        }
+      };
+
+      const currentPin = localIsConfirmMode ? localConfirmPin : localNewPin;
+
+      return (
+        <Modal visible={true} transparent={true} animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: '#2F318B' }]}>
+              <View style={styles.header}>
+                <Text style={[styles.headerTitle, { color: '#FFF' }]}>
+                  {localIsConfirmMode ? 'Ulangi PIN Baru' : 'Buat PIN Baru'}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => Alert.dismiss()}
+                  style={styles.closeButton}
+                >
+                  <Icon name="close" size={24} color="#FFF" />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={[styles.forgotPinText, { color: '#FFF', textAlign: 'center', marginTop: 10 }]}>
+                {localIsConfirmMode 
+                  ? 'Masukkan kembali PIN baru Anda'
+                  : 'Masukkan PIN baru 6 digit'}
+              </Text>
+
+              <View style={styles.pinDotsContainer}>
+                {Array.from({ length: 6 }).map((_, index) => (
+                  <View
+                    key={index}
+                    style={[
+                      styles.pinDot,
+                      { backgroundColor: index < currentPin.length ? '#FFF' : 'rgba(255,255,255,0.3)' },
+                    ]}
+                  />
+                ))}
+              </View>
+
+              <View style={styles.numberPad}>
+                {[0, 1, 2].map((row) => (
+                  <View key={row} style={styles.numberRow}>
+                    {[1, 2, 3].map((col) => {
+                      const number = (row * 3 + col).toString();
+                      return (
+                        <TouchableOpacity
+                          key={number}
+                          style={[styles.numberButton, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
+                          onPress={() => onNumberPress(number)}
+                          disabled={isUpdating}
+                        >
+                          <Text style={[styles.numberButtonText, { color: '#FFF' }]}>
+                            {number}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ))}
+
+                <View style={styles.numberRow}>
+                  <View style={styles.numberButton} />
+                  <TouchableOpacity
+                    style={[styles.numberButton, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
+                    onPress={() => onNumberPress('0')}
+                    disabled={isUpdating}
+                  >
+                    <Text style={[styles.numberButtonText, { color: '#FFF' }]}>0</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.numberButton, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
+                    onPress={onDeletePress}
+                    disabled={isUpdating}
+                  >
+                    <Icon name="backspace-outline" size={24} color="#FFF" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      );
+    };
+
+    // Show the modal
+    Alert.alert('', '', [], { cancelable: false });
+    setTimeout(() => {
+      Alert.dismiss();
+      // You'll need to create a separate state management for this modal
+      // For simplicity, using Alert here but ideally use a separate Modal component
+    }, 100);
   };
 
   const onNumberPressed = (number) => {
@@ -248,84 +536,195 @@ export default function PinVerificationModal({
     );
   };
 
-  const processPayment = async () => {
-    if ((hasExistingPin && pin.length !== maxPinLength) || isProcessing || !userId) {
-      return;
-    }
 
-    setIsProcessing(true);
+    const deductWalletOnPending = async () => {
+ 
+      const pricing = isAgens ? product.price : product.priceTierTwo
+       const randomNum = Math.floor(10000 + Math.random() * 90000); 
+  const newRef = `DEDUCTOPAY-${randomNum}`;
+        const deductSuccess = await deductWalletBalance(pricing, newRef);
 
-    try {
-      if (hasExistingPin) {
-        const verifyResult = await verifyPin(userId, pin);
-
-        if (verifyResult.success !== true) {
-          setIsProcessing(false);
-          setPin('');
-
-          let errorMessage = verifyResult.error || 'PIN tidak valid';
-          if (verifyResult.attempts_remaining != null) {
-            errorMessage += `\nSisa percobaan: ${verifyResult.attempts_remaining}`;
-          }
-
-          showErrorDialog('PIN Salah', errorMessage);
-          return;
+        if (deductSuccess) {
+          console.log('✅ Wallet deducted successfully');
         }
       }
 
-      const refId = isPascabayarTransaction() ? product.ref_id.toString() : generateRefId();
 
-      let apiEndpoint;
-      let requestBody;
+const deductWalletBalance = async (amount, refId) => {
+  console.log("====================================");
+  console.log("🔥 DEDUCT DEBUG TRIGGERED");
+  console.log("Amount:", amount);
+  console.log("RefID:", refId);
+  console.log("WalletDeducted Set:", Array.from(walletDeducted));
+  console.log("====================================");
 
-      if (isPascabayarTransaction()) {
-        apiEndpoint = `${API_URL_PROD}/api/pay-transaction`;
-        requestBody = {
-          customer_no: phoneNumber,
-          buyer_sku_code: product.buyer_sku_code,
-          ref_id: refId,
-          user_id: userId,
-          testing: true,
-        };
-      } else {
-        apiEndpoint = `${API_URL_PROD}/api/order-transaction`;
-        requestBody = {
-          customer_no: phoneNumber,
-          buyer_sku_code: product.buyer_sku_code,
-          ref_id: refId,
-          user_id: userId,
-          testing: false,
-        };
-      }
+  try {
+    const userData = await AsyncStorage.getItem('userData');
+    const userObj = JSON.parse(userData || '{}');
 
-      console.log('Payment Request:', requestBody);
+    console.log("User Loaded:", userObj.id);
 
-      const response = await axios.post(apiEndpoint, requestBody);
-
-      console.log('Payment Response:', response.data);
-
-      if (response.data.success === true) {
-        onClose();
-        navigation.replace('TransactionReceipt', {
-          product: product,
-          phoneNumber: phoneNumber,
-          provider: provider,
-          transactionData: response.data,
-          providerLogo: providerLogo,
-        });
-      } else {
-        showErrorDialog(
-          'Transaksi Gagal',
-          response.data.message || 'Transaksi tidak dapat diproses'
-        );
-      }
-    } catch (error) {
-      console.error('Payment Error:', error);
-      showErrorDialog('Kesalahan', `Terjadi kesalahan: ${error.message}`);
-    } finally {
-      setIsProcessing(false);
+    // DEBUG: cek apakah sudah pernah di-deduct
+    if (walletDeducted.has(refId)) {
+      console.log("❌ SKIPPED — walletDeducted sudah ada REFID:", refId);
+      return true;
     }
-  };
+
+    const alreadyDeducted = await AsyncStorage.getItem(`deduct_${refId}`);
+    console.log("AsyncStorage deduct flag:", alreadyDeducted);
+
+    if (alreadyDeducted === "true") {
+      console.log("❌ SKIPPED — AsyncStorage flag found");
+      return true;
+    }
+
+    console.log("⏳ POST KE SERVER DEDUCT SALDO…");
+
+    const response = await axios.post(`${API_URL}/api/deduct-saldo/deduct`, {
+      user_id: userObj.id,
+      amount: amount,
+      transaction_type: 'ppob_payment',
+      reference: refId,
+    });
+
+    console.log("SERVER RESPONSE:", response.data);
+
+    if (response.data) {
+      console.log("✅ SUCCESS — DEDUCT DONE:", refId);
+
+      // simpan flag biar 100% tidak ter-deduct 2x
+      await AsyncStorage.setItem(`deduct_${refId}`, "true");
+      setWalletDeducted(prev => new Set([...prev, refId]));
+
+      return true;
+    } else {
+      console.log("❌ SERVER RETURNED ERROR, NO DEDUCT");
+      return false;
+    }
+
+  } catch (error) {
+    console.log("❌ ERROR deductWalletBalance:", error);
+    return false;
+  }
+};
+
+
+  const processPayment = async () => {
+  if ((hasExistingPin && pin.length !== maxPinLength) || isProcessing || !userId) {
+    return;
+  }
+
+  setIsProcessing(true);
+
+  try {
+    if (hasExistingPin) {
+      const verifyResult = await verifyPin(userId, pin);
+
+      if (verifyResult.success !== true) {
+        setIsProcessing(false);
+        setPin('');
+
+        let errorMessage = verifyResult.error || 'PIN tidak valid';
+        if (verifyResult.attempts_remaining != null) {
+          errorMessage += `\nSisa percobaan: ${verifyResult.attempts_remaining}`;
+        }
+
+        showErrorDialog('PIN Salah', errorMessage);
+        return;
+      }
+    }
+
+    // ✅ CEK APAKAH PRODUK DARI NEWPRICELIST ATAU PRICELIST LAMA
+    const isNewPricelist = product.product_code !== undefined;
+    const isPascabayar = isPascabayarTransaction();
+
+    let apiEndpoint;
+    let requestBody;
+    let refId;
+
+    console.log('Product Type Check:', {
+      isNewPricelist,
+      isPascabayar,
+      product_code: product.product_code,
+      buyer_sku_code: product.buyer_sku_code
+    });
+
+    if (isNewPricelist && !isPascabayar) {
+      // ✅ PRABAYAR BARU - PAKAI NEWTRANSACTION API
+      refId = generateRefId();
+      apiEndpoint = `${API_URL}/api/newtransaction/order`;
+      requestBody = {
+        product_code: product.product_code, // ✅ Pakai product_code
+        dest_number: phoneNumber,
+        user_id: userId,
+        qty: 1,
+        ref_id: refId,
+      };
+
+      console.log('🔥 NEW PRABAYAR Transaction Request:', requestBody);
+
+    } else if (isPascabayar) {
+      // ✅ PASCABAYAR - PAKAI PAY-TRANSACTION API (TIDAK DIUBAH)
+      refId = product.ref_id.toString();
+      apiEndpoint = `${API_URL_PROD}/api/pay-transaction`;
+      requestBody = {
+        customer_no: phoneNumber,
+        buyer_sku_code: product.buyer_sku_code,
+        ref_id: refId,
+        user_id: userId,
+        testing: true,
+      };
+
+      console.log('💳 PASCABAYAR Transaction Request:', requestBody);
+
+    } else {
+      // ✅ PRABAYAR LAMA - PAKAI ORDER-TRANSACTION API (TIDAK DIUBAH)
+      refId = generateRefId();
+      apiEndpoint = `${API_URL_PROD}/api/order-transaction`;
+      requestBody = {
+        customer_no: phoneNumber,
+        buyer_sku_code: product.buyer_sku_code,
+        ref_id: refId,
+        user_id: userId,
+        testing: false,
+      };
+
+      console.log('📱 OLD PRABAYAR Transaction Request:', requestBody);
+    }
+
+    console.log('API Endpoint:', apiEndpoint);
+    console.log('Request Body:', requestBody);
+
+    const response = await axios.post(apiEndpoint, requestBody);
+
+    console.log('Payment Response:', response.data);
+
+    if (response.data.success === true) {
+      deductWalletOnPending();
+      onClose();
+      navigation.replace('TransactionReceipt', {
+        product: product,
+        phoneNumber: phoneNumber,
+        provider: provider,
+        transactionData: response.data,
+        providerLogo: providerLogo,
+        isAgenss: isAgens
+      });
+    } else {
+      showErrorDialog(
+        'Transaksi Gagal',
+        response.data.message || 'Transaksi tidak dapat diproses'
+      );
+    }
+  } catch (error) {
+    console.error('Payment Error:', error.response?.data || error.message);
+    showErrorDialog('Kesalahan', `Terjadi kesalahan: ${error.response?.data?.message || error.message}`);
+  } finally {
+    setIsProcessing(false);
+  }
+};
+
+
 
   const showErrorDialog = (title, message) => {
     Alert.alert(title, message, [{ text: 'OK' }]);
@@ -422,7 +821,6 @@ export default function PinVerificationModal({
   console.log('visible:', visible);
   console.log('isLoading:', isLoading);
 
-  // ✅ JANGAN return null di sini!
   return (
     <Modal
       visible={visible}
@@ -473,13 +871,16 @@ export default function PinVerificationModal({
 
               {/* Forgot PIN - only show if not in create mode */}
               {!isCreatePinMode && (
-                <TouchableOpacity
-                  onPress={() => Alert.alert('Info', 'Fitur lupa PIN')}
-                  disabled={isProcessing}
-                  style={styles.forgotPinButton}
-                >
-                  <Text style={styles.forgotPinText}>Lupa PIN?</Text>
-                </TouchableOpacity>
+             <TouchableOpacity
+    onPress={() => {
+      onClose(); // Close current modal
+      navigation.push('ForgotPinPage'); // Navigate to Forgot PIN page
+    }}
+    disabled={isProcessing}
+    style={styles.forgotPinButton}
+  >
+    <Text style={styles.forgotPinText}>Lupa PIN?</Text>
+  </TouchableOpacity>
               )}
 
               {/* Number Pad */}
@@ -527,7 +928,6 @@ export default function PinVerificationModal({
   );
 }
 
-
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
@@ -539,7 +939,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    height: height * 0.7, // ✅ Dikurangi dari 0.75 jadi 0.7
+    height: height * 0.7,
     paddingBottom: 20,
   },
   loadingContainer: {
@@ -557,12 +957,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 12, // ✅ Dikurangi dari 16
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
   },
   headerTitle: {
-    fontSize: 16, // ✅ Dikurangi dari 18
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#000',
     fontFamily: 'Poppins-Bold',
@@ -577,11 +977,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 40,
-    marginTop: 20, // ✅ Dikurangi dari 30
-    gap: 12, // ✅ Dikurangi dari 16
+    marginTop: 20,
+    gap: 12,
   },
   pinDot: {
-    width: 14, // ✅ Dikurangi dari 16
+    width: 14,
     height: 14,
     borderRadius: 7,
     backgroundColor: '#E0E0E0',
@@ -591,11 +991,11 @@ const styles = StyleSheet.create({
   },
   forgotPinButton: {
     alignSelf: 'center',
-    marginTop: 15, // ✅ Dikurangi dari 20
+    marginTop: 15,
     paddingVertical: 6,
   },
   forgotPinText: {
-    fontSize: 13, // ✅ Dikurangi dari 14
+    fontSize: 13,
     color: '#2F318B',
     fontFamily: 'Poppins-Medium',
   },
@@ -603,16 +1003,16 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: 30,
-    marginTop: 10, // ✅ Dikurangi dari 20
-    marginBottom: 10, // ✅ Tambahkan margin bottom
+    marginTop: 10,
+    marginBottom: 10,
   },
   numberRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 10, // ✅ Dikurangi dari 12
+    marginBottom: 10,
   },
   numberButton: {
-    width: 65, // ✅ Dikurangi dari 70
+    width: 65,
     height: 65,
     borderRadius: 12,
     backgroundColor: '#FFF',
@@ -625,7 +1025,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   numberButtonText: {
-    fontSize: 22, // ✅ Dikurangi dari 24
+    fontSize: 22,
     fontWeight: '600',
     color: '#000',
     fontFamily: 'Poppins-SemiBold',
@@ -636,9 +1036,9 @@ const styles = StyleSheet.create({
   processButton: {
     backgroundColor: '#2F318B',
     marginHorizontal: 20,
-    marginTop: 10, // ✅ Dikurangi dari 20
-    marginBottom: 10, // ✅ Tambahkan margin bottom
-    paddingVertical: 14, // ✅ Dikurangi dari 16
+    marginTop: 10,
+    marginBottom: 10,
+    paddingVertical: 14,
     borderRadius: 16,
     alignItems: 'center',
   },
@@ -651,7 +1051,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   processButtonText: {
-    fontSize: 14, // ✅ Dikurangi dari 15
+    fontSize: 14,
     fontWeight: 'bold',
     color: '#FFF',
     fontFamily: 'Poppins-Bold',

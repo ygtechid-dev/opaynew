@@ -11,6 +11,7 @@ import {
   Alert,
   Modal,
   FlatList,
+  KeyboardAvoidingView,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
@@ -36,6 +37,11 @@ export default function PostpaidPage({ navigation, route }) {
   const [isAgen, setIsAgen] = useState(false);
   const [isLoadingAgen, setIsLoadingAgen] = useState(true);
   const [showProductModal, setShowProductModal] = useState(false);
+
+  // State untuk contact picker
+  const [contacts, setContacts] = useState([]);
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [searchContact, setSearchContact] = useState('');
 
   useEffect(() => {
     console.log('📍 Route Params:', { title, categoryName });
@@ -68,13 +74,12 @@ export default function PostpaidPage({ navigation, route }) {
         `${API_URL}/api/users/agen/user/${userObj.id}`
       );
 
-      if (response.data && response.data.length > 0) {
+      if (response.data.data && response.data.data.length > 0) {
         setIsAgen(true);
       } else {
         setIsAgen(false);
       }
     } catch (error) {
-      console.error('Error checking agen status:', error);
       setIsAgen(false);
     } finally {
       setIsLoadingAgen(false);
@@ -109,17 +114,17 @@ export default function PostpaidPage({ navigation, route }) {
 
         // Filter produk postpaid
         const postpaidProducts = productsResponse.data.filter(
-          (product) => product.product_source === 'postpaid'
+          (product) => product.category_name === 'Pascabayar'
         );
         console.log('📦 Postpaid products:', postpaidProducts.length);
 
         // Filter berdasarkan category_name
         const categoryProducts = postpaidProducts.filter((product) =>
-          product.category_name?.toLowerCase().includes(categoryName.toLowerCase())
+          product.brand_name?.toLowerCase().includes(title.toLowerCase())
         );
-        console.log(`📦 Products for category "${categoryName}":`, categoryProducts.length);
+        console.log(`📦 Products for category "${categoryName}":`, categoryProducts);
         
-        if (categoryProducts.length > 0) {
+        if (categoryProducts.length >= 0) {
           console.log('📋 Sample category product:', {
             id: categoryProducts[0].id,
             product_name: categoryProducts[0].product_name,
@@ -143,29 +148,33 @@ export default function PostpaidPage({ navigation, route }) {
 
           return {
             ...product,
+            buyerSkuPrefix: buyerSkuPrefix,
             logo_uri: matchedLogo?.logo_uri || null,
             backgroundColor: matchedLogo?.backgroundColor || '#2F318B',
           };
         });
         
-        console.log('✅ Postpaid Products with Logo:', productsWithLogo.length);
+        console.log('✅ Postpaid Products with Logo:', productsWithLogo);
 
         setAllPostpaidProducts(productsWithLogo);
 
         // Get unique brands
-        const uniqueBrands = [];
-        productsWithLogo.forEach((p) => {
-          if (!uniqueBrands.some((b) => b.brand_name === p.brand_name)) {
-            uniqueBrands.push({
-              brand_name: p.brand_name,
-              logo_uri: p.logo_uri,
-              backgroundColor: p.backgroundColor,
-            });
-          }
-        });
+    // Get unique product names
+const uniqueProductsByName = [];
+productsWithLogo.forEach((p) => {
+  if (!uniqueProductsByName.some((u) => u.product_name === p.product_name)) {
+    uniqueProductsByName.push({
+      product_name: p.product_name,
+      logo_uri: p.logo_uri,
+      backgroundColor: p.backgroundColor,
+      id: p.id, // optional kalau mau dipakai
+    });
+  }
+});
 
-        console.log('🏷️ Unique Brands:', uniqueBrands.map(b => b.brand_name));
-        setUniqueProductTypes(uniqueBrands);
+console.log('🏷️ Unique Product Names:', uniqueProductTypes);
+setUniqueProductTypes(uniqueProductsByName);
+
       }
     } catch (error) {
       console.error('❌ Error fetching postpaid products:', error);
@@ -186,7 +195,7 @@ export default function PostpaidPage({ navigation, route }) {
     console.log('All Products Count:', allPostpaidProducts.length);
 
     const filtered = allPostpaidProducts.filter(
-      (product) => product.brand_name === selectedProduct
+      (product) => product.product_name === selectedProduct
     );
 
     console.log('✅ Filtered Products Count:', filtered.length);
@@ -231,25 +240,54 @@ export default function PostpaidPage({ navigation, route }) {
         }
       }
 
-      const contact = await Contacts.openContactPicker();
+      Contacts.getAll()
+        .then(allContacts => {
+          console.log('Total contacts:', allContacts.length);
+          
+          const contactsWithPhone = allContacts.filter(
+            contact => contact.phoneNumbers && contact.phoneNumbers.length > 0
+          );
+          
+          contactsWithPhone.sort((a, b) => {
+            const nameA = a.displayName || a.givenName || '';
+            const nameB = b.displayName || b.givenName || '';
+            return nameA.localeCompare(nameB);
+          });
+          
+          setContacts(contactsWithPhone);
+          setShowContactModal(true);
+        })
+        .catch(error => {
+          console.error('Error getting contacts:', error);
+          Alert.alert('Error', 'Gagal mengambil daftar kontak');
+        });
 
-      if (!contact.phoneNumbers || contact.phoneNumbers.length === 0) {
-        Alert.alert('Tidak ada nomor telepon', 'Kontak tidak punya nomor.');
-        return;
-      }
-
-      let number = contact.phoneNumbers[0].number;
-      number = number
-        .replace(/\s+/g, '')
-        .replace(/-/g, '')
-        .replace(/\(/g, '')
-        .replace(/\)/g, '')
-        .replace(/^\+62/, '0');
-
-      setCustomerNumber(number);
     } catch (error) {
       console.log('Error open contact picker:', error);
+      Alert.alert('Error', 'Terjadi kesalahan: ' + error.message);
     }
+  };
+
+  const selectContact = (contact) => {
+    if (!contact.phoneNumbers || contact.phoneNumbers.length === 0) {
+      Alert.alert('Tidak ada nomor', 'Kontak ini tidak memiliki nomor telepon');
+      return;
+    }
+
+    let number = contact.phoneNumbers[0].number;
+    number = number
+      .replace(/\s+/g, '')
+      .replace(/-/g, '')
+      .replace(/\(/g, '')
+      .replace(/\)/g, '')
+      .replace(/\+/g, '')
+      .replace(/^62/, '0');
+
+    console.log('Selected number:', number);
+
+    setCustomerNumber(number);
+    setShowContactModal(false);
+    setSearchContact('');
   };
 
   const checkBill = async () => {
@@ -268,7 +306,8 @@ export default function PostpaidPage({ navigation, route }) {
     
     try {
       const selectedProductData = filteredProducts[0];
-      
+        console.log('seleccv', selectedProductData);
+        
       if (!selectedProductData || !selectedProductData.buyer_sku_code) {
         Alert.alert('Error', 'Produk tidak ditemukan');
         setIsChecking(false);
@@ -289,7 +328,7 @@ export default function PostpaidPage({ navigation, route }) {
         });
       } else {
         console.log('📋 Checking postpaid bill:', { customerNumber, buyerSkuCode });
-        response = await axios.post(`${API_URL}/api/transaction/inquiry-transaction`, {
+        response = await axios.post(`${API_URL}/api/inquiry-transaction`, {
           customer_no: customerNumber,
           buyer_sku_code: buyerSkuCode,
           testing: false,
@@ -298,7 +337,7 @@ export default function PostpaidPage({ navigation, route }) {
 
       console.log('📥 Inquiry response:', response.data);
 
-      if (response.data && response.data.success) {
+      if (response.data.success) {
         // Handle PLN response
         if (isPLN && response.data.data) {
           const plnData = response.data.data;
@@ -310,7 +349,7 @@ export default function PostpaidPage({ navigation, route }) {
             subscriberId: plnData.subscriber_id || '-',
             power: plnData.power || '-',
             billAmount: parseFloat(plnData.bill_amount) || 0,
-            adminFee: parseFloat(plnData.admin_fee) || 0,
+            adminFee: parseFloat(plnData.admin) || 0,
             totalAmount: parseFloat(plnData.total_amount) || 0,
             penalty: parseFloat(plnData.penalty) || 0,
             miscFee: parseFloat(plnData.misc_fee) || 0,
@@ -332,7 +371,7 @@ export default function PostpaidPage({ navigation, route }) {
             customerNo: responseData.customer_no || customerNumber,
             billAmount: parseFloat(responseData.price || responseData.selling_price) || 0,
             adminFee: parseFloat(responseData.admin || responseData.admin_fee) || 0,
-            totalAmount: parseFloat(responseData.selling_price || responseData.price) || 0,
+            totalAmount: isAgen ? parseFloat(responseData.selling_price + 2300 || responseData.price  + 2300) : parseFloat(responseData.selling_price + 3500 || responseData.price  + 3500),
             dueDate: responseData.due_date || responseData.jatuh_tempo || '-',
             period: responseData.desc?.periode || responseData.period || '-',
             productName: responseData.product_name || selectedProductData.product_name,
@@ -349,7 +388,7 @@ export default function PostpaidPage({ navigation, route }) {
         setBillInfo(null);
       }
     } catch (error) {
-      console.error('❌ Error checking bill:', error);
+      console.error('❌ Error checking bill:', error.response);
       
       let errorMessage = 'Gagal mengecek tagihan';
       
@@ -406,10 +445,14 @@ export default function PostpaidPage({ navigation, route }) {
   const renderBillInfo = () => {
     if (!billInfo) return null;
 
-    const displayAdminFee = isAgen ? 0 : billInfo.adminFee;
-    const displayTotal = isAgen 
-      ? billInfo.billAmount 
-      : billInfo.totalAmount;
+    console.log('bdfd', billInfo);
+    
+   const displayAdminFee = isAgen 
+  ? billInfo.adminFee + 2300 
+  : billInfo.adminFee + 3200;
+
+// TOTAL HARUS include admin fee:
+const displayTotal = billInfo.billAmount + displayAdminFee;
 
     return (
       <View style={styles.billInfoCard}>
@@ -568,6 +611,39 @@ export default function PostpaidPage({ navigation, route }) {
     );
   };
 
+  // Filter contacts
+  const filteredContacts = contacts.filter(contact => {
+    const displayName = contact.displayName || contact.givenName || '';
+    const phoneNumber = contact.phoneNumbers?.[0]?.number || '';
+    
+    return (
+      displayName.toLowerCase().includes(searchContact.toLowerCase()) ||
+      phoneNumber.includes(searchContact)
+    );
+  });
+
+  const renderContactItem = ({ item }) => {
+    const displayName = item.displayName || item.givenName || 'No Name';
+    const phoneNumber = item.phoneNumbers?.[0]?.number || '';
+    
+    return (
+      <TouchableOpacity
+        style={styles.contactItem}
+        onPress={() => selectContact(item)}
+      >
+        <View style={styles.contactAvatar}>
+          <Text style={styles.contactAvatarText}>
+            {displayName.charAt(0).toUpperCase()}
+          </Text>
+        </View>
+        <View style={styles.contactInfo}>
+          <Text style={styles.contactName}>{displayName}</Text>
+          <Text style={styles.contactPhone}>{phoneNumber}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   const renderProductModal = () => {
     return (
       <Modal
@@ -591,7 +667,7 @@ export default function PostpaidPage({ navigation, route }) {
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={styles.modalItem}
-                  onPress={() => selectProductFromModal(item.brand_name)}
+                  onPress={() => selectProductFromModal(item.product_name)}
                 >
                   <View style={styles.modalItemLeft}>
                     <View style={styles.modalItemIcon}>
@@ -603,11 +679,11 @@ export default function PostpaidPage({ navigation, route }) {
                         />
                       ) : (
                         <Text style={styles.modalItemIconText}>
-                          {item.brand_name.charAt(0)}
+                          {item.product_name.charAt(0)}
                         </Text>
                       )}
                     </View>
-                    <Text style={styles.modalItemText}>{item.brand_name}</Text>
+                    <Text style={styles.modalItemText}>{item.product_name}</Text>
                   </View>
                   <Icon name="chevron-forward" size={20} color="#666" />
                 </TouchableOpacity>
@@ -620,8 +696,69 @@ export default function PostpaidPage({ navigation, route }) {
     );
   };
 
+  // Contact Modal
+  const renderContactModal = () => {
+    return (
+      <Modal
+        visible={showContactModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowContactModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.contactModalContainer}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Pilih Kontak</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowContactModal(false);
+                  setSearchContact('');
+                }}
+              >
+                <Icon name="close" size={28} color="#000" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Search Input */}
+            <View style={styles.searchContainer}>
+              <Icon name="search" size={20} color="#999" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Cari nama atau nomor..."
+                placeholderTextColor="#999"
+                value={searchContact}
+                onChangeText={setSearchContact}
+              />
+            </View>
+
+            {/* Contact List */}
+            <FlatList
+              data={filteredContacts}
+              renderItem={renderContactItem}
+              keyExtractor={(item) => item.recordID}
+              showsVerticalScrollIndicator={false}
+              ListEmptyComponent={
+                <View style={styles.emptyContactState}>
+                  <Icon name="people-outline" size={64} color="#BDBDBD" />
+                  <Text style={styles.emptyContactText}>
+                    Tidak ada kontak ditemukan
+                  </Text>
+                </View>
+              }
+            />
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+
   return (
-    <View style={styles.container}>
+     <KeyboardAvoidingView
+       style={styles.container}
+       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+       keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
+     >
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
@@ -727,7 +864,10 @@ export default function PostpaidPage({ navigation, route }) {
 
       {/* Product Modal */}
       {renderProductModal()}
-    </View>
+
+      {/* Contact Modal */}
+      {renderContactModal()}
+    </KeyboardAvoidingView>
   );
 }
 
@@ -963,7 +1103,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-SemiBold',
   },
   emptyState: {
-      height: '500',
+    height: '500',
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 100,
@@ -1030,7 +1170,7 @@ const styles = StyleSheet.create({
   modalItemIconText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#FFF',
+    color: '#000',
     fontFamily: 'Poppins-Bold',
   },
   modalItemText: {
@@ -1042,5 +1182,79 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#F0F0F0',
     marginHorizontal: 20,
+  },
+  // Contact Modal Styles
+  contactModalContainer: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+    paddingBottom: 20,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    marginHorizontal: 20,
+    marginVertical: 15,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#000',
+    marginLeft: 10,
+    fontFamily: 'Poppins-Regular',
+    padding: 0,
+  },
+  contactItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  contactAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#2F318B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
+  },
+  contactAvatarText: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#FFF',
+    fontFamily: 'Poppins-SemiBold',
+  },
+  contactInfo: {
+    flex: 1,
+  },
+  contactName: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#000',
+    marginBottom: 4,
+    fontFamily: 'Poppins-Medium',
+  },
+  contactPhone: {
+    fontSize: 14,
+    color: '#666',
+    fontFamily: 'Poppins-Regular',
+  },
+  emptyContactState: {
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyContactText: {
+    fontSize: 14,
+    color: '#BDBDBD',
+    marginTop: 16,
+    fontFamily: 'Poppins-Regular',
   },
 });

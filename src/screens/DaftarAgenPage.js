@@ -303,7 +303,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E0E0E0',
     paddingHorizontal: 16,
-    paddingVertical: 18,
+    paddingVertical: 10,
     marginBottom: 20,
   },
   inputIcon: {

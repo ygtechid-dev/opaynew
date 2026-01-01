@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "930543962362",
+    "project_id": "ditokoku-c7c48",
+    "storage_bucket": "ditokoku-c7c48.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:930543962362:android:b970e4d1bedb4788e16143",
+        "android_client_info": {
+          "package_name": "com.newditokoku"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCk93_jK5sGpdo5bBueU-_T4f6nbQ8WNM4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -14,40 +14,61 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { API_URL } from '../../context/APIUrl';
+import { useFocusEffect } from '@react-navigation/native';
 
 export default function ProfileTab({ navigation }) {
   const [userData, setUserData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [sidikJariActive, setSidikJariActive] = useState(false);
   const [saldoShow, setSaldoShow] = useState(false); // ✅ State untuk show/hide saldo
-
-  useEffect(() => {
+const [agenStatus, setAgenStatus] = useState('Agen Basic');
+useFocusEffect(
+  React.useCallback(() => {
     loadUserData();
-  }, []);
+  }, [])
+);
+  
 
-  const loadUserData = async () => {
-    try {
-      setIsLoading(true);
-      const userJson = await AsyncStorage.getItem('userData');
-      
-      if (userJson) {
-        const userObj = JSON.parse(userJson);
-        
-        // Fetch latest data from API
-        const response = await axios.get(`${API_URL}/api/users/${userObj.id}`);
-        
-        if (response.data) {
-          setUserData(response.data.data);
-          await AsyncStorage.setItem('userData', JSON.stringify(response.data.data));
-        }
+const loadUserData = async () => {
+  try {
+    setIsLoading(true);
+    const userJson = await AsyncStorage.getItem('userData');
+    
+    if (userJson) {
+      const userObj = JSON.parse(userJson);
+
+      // Fetch latest data user
+      const response = await axios.get(`${API_URL}/api/users/${userObj.id}`);
+
+      if (response.data) {
+        setUserData(response.data.data);
+        await AsyncStorage.setItem('userData', JSON.stringify(response.data.data));
       }
-    } catch (error) {
-      console.error('Error loading user data:', error);
-      Alert.alert('Error', 'Gagal memuat data user');
-    } finally {
-      setIsLoading(false);
+
+      try {
+        const agenRes = await axios.get(`${API_URL}/api/users/agen/user/${userObj.id}`);
+
+        if (agenRes?.data?.data) {
+          setAgenStatus('Agen Platinum');
+        } else {
+          setAgenStatus('Agen Basic');
+        }
+
+      } catch (error) {
+        // Jika API error atau agen tidak ada
+        setAgenStatus('Agen Basic');
+      }
+
     }
-  };
+  } catch (error) {
+    console.error('Error loading user data:', error);
+    Alert.alert('Error', 'Gagal memuat data user');
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+
 
   const formatCurrency = (amount) => {
     if (!amount) return 'xx,xxx,xxx';
@@ -113,7 +134,7 @@ export default function ProfileTab({ navigation }) {
           <Text style={styles.userName}>
             {userData?.f_name || ''} {userData?.l_name || ''}
           </Text>
-          <Text style={styles.memberType}>Basic Member</Text>
+          <Text style={styles.memberType}>{agenStatus ? agenStatus : '-'}</Text>
         </View>
 
         {/* Saldo Card */}

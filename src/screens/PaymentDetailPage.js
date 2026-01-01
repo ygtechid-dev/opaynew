@@ -18,7 +18,9 @@ import PinVerificationModal from './PinVerificationModal';
 
 export default function PaymentDetailPage({ route, navigation }) {
   const { product, phoneNumber, provider, providerLogo } = route.params;
-
+console.log('====================================');
+console.log('prodssd', product);
+console.log('====================================');
   const [isAgen, setIsAgen] = useState(false);
   const [isLoadingAgen, setIsLoadingAgen] = useState(true);
   const [minSaldo, setMinSaldo] = useState(10000);
@@ -76,7 +78,6 @@ export default function PaymentDetailPage({ route, navigation }) {
         setIsAgen(false);
       }
     } catch (error) {
-      console.error('Error checking agen status:', error);
       setIsAgen(false);
     } finally {
       setIsLoadingAgen(false);
@@ -101,21 +102,36 @@ export default function PaymentDetailPage({ route, navigation }) {
     }
   };
 
-  const getPrice = () => {
-    const typeName = product.type_name?.toLowerCase() || '';
-    
-    // Jika pascabayar, selalu gunakan price
-    if (typeName === 'pascabayar') {
-      return product.price?.toString() || '0';
-    }
-    
-    // Jika bukan pascabayar, cek status agen
+ // Di PaymentDetailPage.js, update getPrice function
+
+const getPrice = () => {
+  // ✅ SUPPORT UNTUK NEWPRICELIST (product_code) dan PRICELIST LAMA (buyer_sku_code)
+  
+  // Cek apakah ini produk dari newpricelist (ada product_code)
+  const isNewPricelist = product.product_code !== undefined;
+  
+  if (isNewPricelist) {
+    // ✅ NEWPRICELIST: gunakan price untuk agen, priceTierTwo untuk non-agen
     if (isAgen) {
       return product.price?.toString() || '0';
     } else {
       return product.priceTierTwo?.toString() || product.price?.toString() || '0';
     }
-  };
+  } else {
+    // PRICELIST LAMA (pascabayar/prabayar lama)
+    const typeName = product.type_name?.toLowerCase() || '';
+    
+    if (typeName === 'pascabayar') {
+      return product.price?.toString() || '0';
+    }
+    
+    if (isAgen) {
+      return product.price?.toString() || '0';
+    } else {
+      return product.priceTierTwo?.toString() || product.price?.toString() || '0';
+    }
+  }
+};
 
   const formatPrice = (price) => {
     const priceDouble = parseFloat(price) || 0;
@@ -327,6 +343,7 @@ const handlePayNow = () => {
         visible={showPinModal}
         onClose={() => setShowPinModal(false)}
         product={product}
+        isAgens={isAgen}
         phoneNumber={phoneNumber}
         provider={provider}
         providerLogo={providerLogo}
@@ -371,6 +388,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: 24,
+    paddingTop: 20,
     marginBottom: 32,
   },
   backIcon: {

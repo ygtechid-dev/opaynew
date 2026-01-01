@@ -7,10 +7,14 @@ import {
   TouchableOpacity, 
   SafeAreaView,
   StatusBar,
-  Alert
+  Alert,
+  KeyboardAvoidingView,
+  Platform
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
+import { OneSignal } from 'react-native-onesignal';
 
 
 const FONNTE_TOKEN = 'AmaaJpg2iQCaF54456H8';
@@ -123,6 +127,7 @@ const handleConfirm = async () => {
       await AsyncStorage.setItem('userToken', token);
       await AsyncStorage.setItem('userData', JSON.stringify(userData));
       
+      OneSignal.login(String(userData.id));
       navigation.reset({
         index: 0,
         routes: [{ name: 'Home' }],
@@ -142,7 +147,12 @@ const handleConfirm = async () => {
 }
 
 
-  return (
+ return (
+  <KeyboardAvoidingView
+    style={{ flex: 1 }}
+    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
+  >
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       
@@ -163,34 +173,33 @@ const handleConfirm = async () => {
           Silahkan Masukkan 6 digit kode OTP yang dikirimkan melalui whatsapp
         </Text>
 
-        {/* OTP Input Boxes */}
+        {/* OTP Input */}
         <View style={styles.otpContainer}>
           {otp.map((digit, index) => (
-          <View key={index} style={styles.otpBoxContainer}>
-  <TextInput
-    ref={(ref) => (inputRefs.current[index] = ref)}
-    style={styles.otpInput}
-    value={digit}
-    onChangeText={(value) => handleOtpChange(value, index)}
-    onKeyPress={(e) => handleKeyPress(e, index)}
-    keyboardType="number-pad"
-    maxLength={1}
-  />
-</View>
-
+            <View key={index} style={styles.otpBoxContainer}>
+              <TextInput
+                ref={(ref) => (inputRefs.current[index] = ref)}
+                style={styles.otpInput}
+                value={digit}
+                onChangeText={(value) => handleOtpChange(value, index)}
+                onKeyPress={(e) => handleKeyPress(e, index)}
+                keyboardType="number-pad"
+                maxLength={1}
+              />
+            </View>
           ))}
         </View>
 
-        {/* Resend Link */}
+        {/* Resend */}
         <View style={styles.resendContainer}>
           <Text style={styles.resendText}>Tidak menerima kode OTP? </Text>
-          <TouchableOpacity>
+          <TouchableOpacity onPress={handleResendOTP}>
             <Text style={styles.resendLink}>Kirim Ulang</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Confirm Button */}
+      {/* Button */}
       <View style={styles.footer}>
         <TouchableOpacity 
           style={styles.btn} 
@@ -200,7 +209,9 @@ const handleConfirm = async () => {
         </TouchableOpacity>
       </View>
     </SafeAreaView>
-  );
+  </KeyboardAvoidingView>
+);
+
 }
 
 const styles = StyleSheet.create({

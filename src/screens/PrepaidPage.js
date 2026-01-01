@@ -11,6 +11,7 @@ import {
   Alert,
   Modal,
   FlatList,
+  KeyboardAvoidingView,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
@@ -29,11 +30,16 @@ export default function PrepaidPage({ navigation, route }) {
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [allPrepaidProducts, setAllPrepaidProducts] = useState([]);
   const [uniqueProductTypes, setUniqueProductTypes] = useState([]);
-  const [productLogos, setProductLogos] = useState({}); // ✅ Menyimpan logo mapping
+  const [productLogos, setProductLogos] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [isAgen, setIsAgen] = useState(false);
   const [isLoadingAgen, setIsLoadingAgen] = useState(true);
   const [showProductModal, setShowProductModal] = useState(false);
+  
+  // State untuk contact picker
+  const [contacts, setContacts] = useState([]);
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [searchContact, setSearchContact] = useState('');
 
   useEffect(() => {
     checkAgenStatus();
@@ -41,7 +47,7 @@ export default function PrepaidPage({ navigation, route }) {
   }, []);
 
   useEffect(() => {
-    if (selectedProduct && phoneNumber.length >= 10) {
+    if (selectedProduct && phoneNumber.length >= 5) {
       filterProductsBySelection();
     } else {
       setFilteredProducts([]);
@@ -64,31 +70,27 @@ export default function PrepaidPage({ navigation, route }) {
         `${API_URL}/api/users/agen/user/${userObj.id}`
       );
 
-      if (response.data && response.data.length > 0) {
+      if (response.data.data && response.data.data.length > 0) {
         setIsAgen(true);
       } else {
         setIsAgen(false);
       }
     } catch (error) {
-      console.error('Error checking agen status:', error);
       setIsAgen(false);
     } finally {
       setIsLoadingAgen(false);
     }
   };
 
-  // ✅ FETCH PRODUCTS WITH LOGO COMBINING
   const fetchPrepaidProducts = async () => {
     setIsLoading(true);
     try {
-      // Fetch products from both APIs
       const [productsResponse, newProductsResponse] = await Promise.all([
         axios.get(`${API_URL}/api/products`),
         axios.get(`${API_URL}/api/newproductsppob`),
       ]);
 
       if (productsResponse.data && newProductsResponse.data) {
-        // Create logo mapping dari newproductsppob
         const logoMap = {};
         newProductsResponse.data.forEach((newProduct) => {
           if (newProduct.buyerSkuCode && newProduct.logo_uri) {
@@ -101,23 +103,17 @@ export default function PrepaidPage({ navigation, route }) {
 
         setProductLogos(logoMap);
 
-        console.log('Logo Map:', logoMap);
-
-        // Filter produk prepaid saja
         const prepaidProducts = productsResponse.data.filter(
           (product) => product.product_source === 'prepaid'
         );
 
-        // Filter berdasarkan category_name dari params
         const categoryProducts = prepaidProducts.filter((product) =>
-          product.category_name?.toLowerCase().includes(categoryName.toLowerCase())
+          categoryName.toLowerCase().includes(product.category_name?.toLowerCase())
         );
 
-        // Combine dengan logo
         const productsWithLogo = categoryProducts.map((product) => {
           const buyerSkuPrefix = product.buyer_sku_code?.toLowerCase() || '';
           
-          // Cari logo yang matching dengan buyer_sku_code
           let matchedLogo = null;
           for (const [key, value] of Object.entries(logoMap)) {
             if (buyerSkuPrefix.includes(key) || key.includes(buyerSkuPrefix.split(/\d/)[0])) {
@@ -133,24 +129,20 @@ export default function PrepaidPage({ navigation, route }) {
           };
         });
 
-        console.log('Products with Logo:', productsWithLogo.slice(0, 3));
-
         setAllPrepaidProducts(productsWithLogo);
 
-        // Ambil unique brand/product types untuk dropdown
-       const uniqueBrands = [];
+        const uniqueBrands = [];
+        productsWithLogo.forEach((p) => {
+          if (!uniqueBrands.some((b) => b.brand_name === p.brand_name)) {
+            uniqueBrands.push({
+              brand_name: p.brand_name,
+              logo_uri: p.logo_uri,
+              backgroundColor: p.backgroundColor,
+            });
+          }
+        });
 
-productsWithLogo.forEach((p) => {
-  if (!uniqueBrands.some((b) => b.brand_name === p.brand_name)) {
-    uniqueBrands.push({
-      brand_name: p.brand_name,
-      logo_uri: p.logo_uri,
-      backgroundColor: p.backgroundColor,
-    });
-  }
-});
-
-setUniqueProductTypes(uniqueBrands);
+        setUniqueProductTypes(uniqueBrands);
       }
     } catch (error) {
       console.error('Error fetching prepaid products:', error);
@@ -196,25 +188,50 @@ setUniqueProductTypes(uniqueBrands);
         }
       }
 
-      const contact = await Contacts.openContactPicker();
+      Contacts.getAll()
+        .then(allContacts => {
+          const contactsWithPhone = allContacts.filter(
+            contact => contact.phoneNumbers && contact.phoneNumbers.length > 0
+          );
+          
+          contactsWithPhone.sort((a, b) => {
+            const nameA = a.displayName || a.givenName || '';
+            const nameB = b.displayName || b.givenName || '';
+            return nameA.localeCompare(nameB);
+          });
+          
+          setContacts(contactsWithPhone);
+          setShowContactModal(true);
+        })
+        .catch(error => {
+          console.error('Error getting contacts:', error);
+          Alert.alert('Error', 'Gagal mengambil daftar kontak');
+        });
 
-      if (!contact.phoneNumbers || contact.phoneNumbers.length === 0) {
-        Alert.alert('Tidak ada nomor telepon', 'Kontak tidak punya nomor.');
-        return;
-      }
-
-      let number = contact.phoneNumbers[0].number;
-      number = number
-        .replace(/\s+/g, '')
-        .replace(/-/g, '')
-        .replace(/\(/g, '')
-        .replace(/\)/g, '')
-        .replace(/^\+62/, '0');
-
-      setPhoneNumber(number);
     } catch (error) {
       console.log('Error open contact picker:', error);
+      Alert.alert('Error', 'Terjadi kesalahan: ' + error.message);
     }
+  };
+
+  const selectContact = (contact) => {
+    if (!contact.phoneNumbers || contact.phoneNumbers.length === 0) {
+      Alert.alert('Tidak ada nomor', 'Kontak ini tidak memiliki nomor telepon');
+      return;
+    }
+
+    let number = contact.phoneNumbers[0].number;
+    number = number
+      .replace(/\s+/g, '')
+      .replace(/-/g, '')
+      .replace(/\(/g, '')
+      .replace(/\)/g, '')
+      .replace(/\+/g, '')
+      .replace(/^62/, '0');
+
+    setPhoneNumber(number);
+    setShowContactModal(false);
+    setSearchContact('');
   };
 
   const formatPrice = (price) => {
@@ -223,8 +240,8 @@ setUniqueProductTypes(uniqueBrands);
   };
 
   const navigateToPayment = (product) => {
-    if (!phoneNumber || phoneNumber.length < 10) {
-      Alert.alert('Peringatan', 'Masukkan nomor telepon yang valid');
+    if (!phoneNumber) {
+      Alert.alert('Peringatan', 'Masukkan nomor pengguna yang valid');
       return;
     }
 
@@ -232,7 +249,7 @@ setUniqueProductTypes(uniqueBrands);
       product,
       phoneNumber,
       provider: product.brand_name,
-      providerLogo: product.logo_uri, // ✅ Kirim logo_uri ke payment page
+      providerLogo: product.logo_uri,
     });
   };
 
@@ -246,10 +263,8 @@ setUniqueProductTypes(uniqueBrands);
     setShowProductModal(false);
   };
 
-  // ✅ RENDER PRODUCT CARD WITH LOGO
   const renderProductCard = (product) => {
     const productName = product.product_name || '';
-
     const displayPrice = isAgen
       ? formatPrice(product.price || '0')
       : formatPrice(product.priceTierTwo || product.price || '0');
@@ -263,9 +278,7 @@ setUniqueProductTypes(uniqueBrands);
         onPress={() => navigateToPayment(product)}
       >
         <View style={styles.productCardInner}>
-          {/* Left Section */}
           <View style={styles.leftSection}>
-            {/* Product Logo */}
             {product.logo_uri ? (
               <Image
                 source={{ uri: product.logo_uri }}
@@ -293,10 +306,8 @@ setUniqueProductTypes(uniqueBrands);
             </View>
           </View>
 
-          {/* Divider */}
           <View style={styles.verticalDivider} />
 
-          {/* Right Section */}
           {isAgen ? (
             <View style={styles.rightSection}>
               <View style={{ flexDirection: 'row' }}>
@@ -333,7 +344,7 @@ setUniqueProductTypes(uniqueBrands);
   };
 
   const renderProductList = () => {
-    if (phoneNumber.length < 10 || !selectedProduct) {
+    if (phoneNumber.length < 5 || !selectedProduct) {
       return (
         <View style={styles.emptyState}>
           <Icon name="card-outline" size={80} color="#E0E0E0" />
@@ -377,6 +388,39 @@ setUniqueProductTypes(uniqueBrands);
     );
   };
 
+  // Filter contacts
+  const filteredContacts = contacts.filter(contact => {
+    const displayName = contact.displayName || contact.givenName || '';
+    const phoneNumber = contact.phoneNumbers?.[0]?.number || '';
+    
+    return (
+      displayName.toLowerCase().includes(searchContact.toLowerCase()) ||
+      phoneNumber.includes(searchContact)
+    );
+  });
+
+  const renderContactItem = ({ item }) => {
+    const displayName = item.displayName || item.givenName || 'No Name';
+    const phoneNumber = item.phoneNumbers?.[0]?.number || '';
+    
+    return (
+      <TouchableOpacity
+        style={styles.contactItem}
+        onPress={() => selectContact(item)}
+      >
+        <View style={styles.contactAvatar}>
+          <Text style={styles.contactAvatarText}>
+            {displayName.charAt(0).toUpperCase()}
+          </Text>
+        </View>
+        <View style={styles.contactInfo}>
+          <Text style={styles.contactName}>{displayName}</Text>
+          <Text style={styles.contactPhone}>{phoneNumber}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   const renderProductModal = () => {
     return (
       <Modal
@@ -397,38 +441,32 @@ setUniqueProductTypes(uniqueBrands);
             <FlatList
               data={uniqueProductTypes}
               keyExtractor={(item, index) => index.toString()}
-            renderItem={({ item }) => (
-  <TouchableOpacity
-    style={styles.modalItem}
-    onPress={() => selectProductFromModal(item.brand_name)}
-  >
-    <View style={styles.modalItemLeft}>
-      <View
-        style={[
-          styles.modalItemIcon,
-         
-        ]}
-      >
-        {item.logo_uri ? (
-          <Image
-            source={{ uri: item.logo_uri }}
-            style={styles.modalItemImage}
-            resizeMode="contain"
-          />
-        ) : (
-          <Text style={styles.modalItemIconText}>
-            {item.brand_name.charAt(0)}
-          </Text>
-        )}
-      </View>
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.modalItem}
+                  onPress={() => selectProductFromModal(item.brand_name)}
+                >
+                  <View style={styles.modalItemLeft}>
+                    <View style={styles.modalItemIcon}>
+                      {item.logo_uri ? (
+                        <Image
+                          source={{ uri: item.logo_uri }}
+                          style={styles.modalItemImage}
+                          resizeMode="contain"
+                        />
+                      ) : (
+                        <Text style={styles.modalItemIconText}>
+                          {item.brand_name.charAt(0)}
+                        </Text>
+                      )}
+                    </View>
 
-      <Text style={styles.modalItemText}>{item.brand_name}</Text>
-    </View>
+                    <Text style={styles.modalItemText}>{item.brand_name}</Text>
+                  </View>
 
-    <Icon name="chevron-forward" size={20} color="#666" />
-  </TouchableOpacity>
-)}
-
+                  <Icon name="chevron-forward" size={20} color="#666" />
+                </TouchableOpacity>
+              )}
               ItemSeparatorComponent={() => <View style={styles.modalDivider} />}
             />
           </View>
@@ -437,8 +475,69 @@ setUniqueProductTypes(uniqueBrands);
     );
   };
 
+  // Contact Modal
+  const renderContactModal = () => {
+    return (
+      <Modal
+        visible={showContactModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowContactModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.contactModalContainer}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Pilih Kontak</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowContactModal(false);
+                  setSearchContact('');
+                }}
+              >
+                <Icon name="close" size={28} color="#000" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Search Input */}
+            <View style={styles.searchContainer}>
+              <Icon name="search" size={20} color="#999" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Cari nama atau nomor..."
+                placeholderTextColor="#999"
+                value={searchContact}
+                onChangeText={setSearchContact}
+              />
+            </View>
+
+            {/* Contact List */}
+            <FlatList
+              data={filteredContacts}
+              renderItem={renderContactItem}
+              keyExtractor={(item) => item.recordID}
+              showsVerticalScrollIndicator={false}
+              ListEmptyComponent={
+                <View style={styles.emptyContactState}>
+                  <Icon name="people-outline" size={64} color="#BDBDBD" />
+                  <Text style={styles.emptyContactText}>
+                    Tidak ada kontak ditemukan
+                  </Text>
+                </View>
+              }
+            />
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+
   return (
-    <View style={styles.container}>
+  <KeyboardAvoidingView
+    style={styles.container}
+    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
+  >
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
@@ -473,7 +572,7 @@ setUniqueProductTypes(uniqueBrands);
           </TouchableOpacity>
 
           {/* Phone Number Input */}
-          <Text style={styles.inputLabel}>Masukkan No. Telepon</Text>
+          <Text style={styles.inputLabel}>Masukkan No. Pelanggan</Text>
           <View style={styles.inputRow}>
             <View style={styles.phoneInputContainer}>
               <TextInput
@@ -503,7 +602,10 @@ setUniqueProductTypes(uniqueBrands);
 
       {/* Product Modal */}
       {renderProductModal()}
-    </View>
+
+      {/* Contact Modal */}
+      {renderContactModal()}
+    </KeyboardAvoidingView>
   );
 }
 
@@ -551,12 +653,11 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     marginBottom: 20,
   },
-   modalItemImage: {
+  modalItemImage: {
     width: 40,
     height: 40,
     borderRadius: 8,
     marginRight: 12,
-
   },
   productSelectorText: {
     fontSize: 16,
@@ -649,7 +750,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
-  // ✅ LOGO STYLES
   productLogo: {
     width: 45,
     height: 55,
@@ -679,8 +779,7 @@ const styles = StyleSheet.create({
     color: '#000',
     marginBottom: 0,
     fontFamily: 'Poppins-Regular',
-    flexWrap: 'wrap'
-
+    flexWrap: 'wrap',
   },
   productPrice: {
     fontSize: 16,
@@ -726,7 +825,7 @@ const styles = StyleSheet.create({
     marginLeft: 30,
   },
   emptyState: {
-       height: '500',
+    height: '500',
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 100,
@@ -745,8 +844,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 100,
   },
-
-  // Modal Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -808,5 +905,79 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#F0F0F0',
     marginHorizontal: 20,
+  },
+  // Contact Modal Styles
+  contactModalContainer: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+    paddingBottom: 20,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    marginHorizontal: 20,
+    marginVertical: 15,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#000',
+    marginLeft: 10,
+    fontFamily: 'Poppins-Regular',
+    padding: 0,
+  },
+  contactItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  contactAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#2F318B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
+  },
+  contactAvatarText: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#FFF',
+    fontFamily: 'Poppins-SemiBold',
+  },
+  contactInfo: {
+    flex: 1,
+  },
+  contactName: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#000',
+    marginBottom: 4,
+    fontFamily: 'Poppins-Medium',
+  },
+  contactPhone: {
+    fontSize: 14,
+    color: '#666',
+    fontFamily: 'Poppins-Regular',
+  },
+  emptyContactState: {
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyContactText: {
+    fontSize: 14,
+    color: '#BDBDBD',
+    marginTop: 16,
+    fontFamily: 'Poppins-Regular',
   },
 });

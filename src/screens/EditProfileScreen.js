@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   Switch,
   Platform,
+  Linking,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -19,6 +20,9 @@ import axios from 'axios';
 import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
 import ReactNativeBiometrics from 'react-native-biometrics';
 import { API_URL } from '../context/APIUrl';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { check, request, PERMISSIONS, RESULTS } from 'react-native-permissions';
+
 
 const FONNTE_TOKEN = 'AmaaJpg2iQCaF54456H8';
 const rnBiometrics = new ReactNativeBiometrics();
@@ -156,25 +160,62 @@ export default function EditProfileScreen({ navigation, route }) {
   };
 
   // ✅ Buka kamera
-  const openCamera = () => {
+ 
+// ✅ Buka kamera - Fixed untuk iOS
+const openCamera = async () => {
+  try {
     const options = {
       mediaType: 'photo',
       quality: 0.8,
       maxWidth: 800,
       maxHeight: 800,
       saveToPhotos: false,
+      cameraType: 'back',
+      includeBase64: false,
     };
 
-    launchCamera(options, (response) => {
-      if (response.didCancel) {
-        console.log('User cancelled camera');
-      } else if (response.errorCode) {
-        Alert.alert('Error', 'Gagal membuka kamera');
-      } else if (response.assets && response.assets[0]) {
-        setSelectedImage(response.assets[0]);
+    const result = await launchCamera(options);
+    
+    console.log('Camera result:', result);
+    
+    if (result.didCancel) {
+      console.log('User cancelled camera');
+    } else if (result.errorCode) {
+      console.log('Camera Error:', result.errorCode);
+      console.log('Error Message:', result.errorMessage);
+      
+      // Handle specific error codes
+      if (result.errorCode === 'camera_unavailable') {
+        Alert.alert('Error', 'Kamera tidak tersedia');
+      } else if (result.errorCode === 'permission') {
+        Alert.alert(
+          'Izin Diperlukan',
+          'Aplikasi memerlukan akses kamera. Silakan aktifkan di pengaturan.',
+          [
+            { text: 'Batal', style: 'cancel' },
+            { 
+              text: 'Buka Pengaturan', 
+              onPress: () => {
+                if (Platform.OS === 'ios') {
+                  Linking.openURL('app-settings:');
+                } else {
+                  Linking.openSettings();
+                }
+              }
+            }
+          ]
+        );
+      } else {
+        Alert.alert('Error', result.errorMessage || 'Gagal membuka kamera');
       }
-    });
-  };
+    } else if (result.assets && result.assets[0]) {
+      setSelectedImage(result.assets[0]);
+    }
+  } catch (error) {
+    console.log('Camera Exception:', error);
+    Alert.alert('Error', 'Terjadi kesalahan saat membuka kamera');
+  }
+};
 
   // ✅ Buka galeri
   const openGallery = () => {
@@ -414,7 +455,7 @@ const handleLogout = async () => {
   return (
     <>
       <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
-      <View style={styles.container}>
+      <SafeAreaView style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
@@ -542,7 +583,7 @@ const handleLogout = async () => {
             )}
           </TouchableOpacity>
         </View>
-      </View>
+      </SafeAreaView>
     </>
   );
 }

@@ -236,7 +236,7 @@ export default function AgentTopUpWebViewPage({ route, navigation }) {
       // ✅ Alert sukses dengan redirect ke DashboardPPOB
       Alert.alert(
         'Selamat! 🎉',
-        'Anda telah berhasil menjadi Agen Platinum! Saldo telah ditambahkan dan Anda sekarang dapat menikmati harga agen.',
+        'Anda telah berhasil menjadi Agen Platinum! Saldo telah ditambahkan dan Anda sekarang dapat menikmati harga agen platinum.',
         [
           {
             text: 'OK',
@@ -305,6 +305,145 @@ export default function AgentTopUpWebViewPage({ route, navigation }) {
     }
   };
 
+
+ const sendWelcomeEmail = async (userEmail, userName) => {
+  try {
+    const emailHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+          }
+          .container {
+            max-width: 600px;
+            margin: 40px auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          }
+          .header {
+            background-color: #5DCBAD;
+            padding: 30px 20px;
+            text-align: center;
+          }
+          .header h1 {
+            color: #ffffff;
+            margin: 0;
+            font-size: 24px;
+          }
+          .content {
+            padding: 40px 30px;
+            color: #333333;
+            line-height: 1.8;
+          }
+          .content h2 {
+            color: #5DCBAD;
+            font-size: 22px;
+            margin-bottom: 20px;
+          }
+          .content p {
+            margin-bottom: 15px;
+            font-size: 15px;
+          }
+          .footer {
+            background-color: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            color: #888888;
+            font-size: 13px;
+          }
+          .signature {
+            margin-top: 30px;
+            font-weight: bold;
+            color: #5DCBAD;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+
+          <!-- HEADER -->
+          <div class="header">
+            <h1>Selamat! Kamu Sudah Jadi Agen Platinum Ditokoku 🎉</h1>
+          </div>
+
+          <!-- CONTENT -->
+          <div class="content">
+            <h2>Halo, ${userName}!</h2>
+
+            <p>
+              Pendaftaran kamu sebagai <strong>Agen Platinum Ditokoku</strong> sudah berhasil.
+            </p>
+
+            <p>
+              Sekarang kamu bisa menikmati harga lebih murah,
+              keuntungan lebih besar, dan layanan PPOB yang lebih lengkap
+              untuk jualan pulsa, data, token PLN, dan pembayaran lainnya.
+            </p>
+
+            <p>
+              Silakan login ke aplikasi Ditokoku, lalu mulai transaksi
+              sebagai Agen Platinum.
+            </p>
+
+            <p class="signature">
+              Terima kasih sudah mempercayai Ditokoku.<br>
+              Salam,<br>
+              Tim Ditokoku
+            </p>
+          </div>
+
+          <!-- FOOTER -->
+          <div class="footer">
+            © 2024 Ditokoku. All rights reserved.
+          </div>
+
+        </div>
+      </body>
+      </html>
+    `;
+
+    // TEXT FALLBACK (untuk email client non-HTML)
+    const emailText = `
+Selamat! Kamu Sudah Jadi Agen Platinum Ditokoku
+
+Halo ${userName},
+
+Pendaftaran kamu sebagai Agen Platinum Ditokoku sudah berhasil.
+
+Sekarang kamu bisa menikmati harga lebih murah, keuntungan lebih besar, dan layanan PPOB yang lebih lengkap untuk jualan pulsa, data, token PLN, dan pembayaran lainnya.
+
+Silakan login ke aplikasi Ditokoku, lalu mulai transaksi sebagai Agen Platinum.
+
+Terima kasih sudah mempercayai Ditokoku.
+Salam,
+Tim Ditokoku
+    `;
+
+    await axios.post(`${API_URL}/api/emailnotif/send-email`, {
+      to: userEmail,
+      subject: "Selamat! Kamu Sudah Jadi Agen Platinum Ditokoku 🎉",
+      text: emailText,
+      html: emailHtml
+    });
+
+    console.log("✅ Platinum welcome email sent successfully");
+    
+  } catch (error) {
+    console.error("❌ Failed to send Platinum welcome email:", error);
+  }
+};
+
+
+
+
   const registerAgent = async () => {
     try {
       console.log('=== Registering as Agent ===');
@@ -332,6 +471,7 @@ export default function AgentTopUpWebViewPage({ route, navigation }) {
       console.log('Register Agent Response:', response.data);
 
       if (response.data.success || response.data.status === true) {
+        sendWelcomeEmail(userObj.email, userObj.f_name)
         console.log('SUCCESS: Agent registered');
         return;
       } else {

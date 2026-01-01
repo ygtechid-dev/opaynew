@@ -24,6 +24,8 @@ import SetNewPinScreen from '../SetNewPinScreen';
 import TransactionReceiptPage from '../TransactionReceiptPage';
 import PrepaidPage from '../PrepaidPage';
 import PostpaidPage from '../PostpaidPage';
+import ForgotPinPage from '../ForgotPinPage';
+
 
 // ✅ Import halaman-halaman baru
 import DaftarAgenPage from '../DaftarAgenPage';
@@ -166,7 +168,10 @@ export default function AppNavigator() {
         <Stack.Screen name="OTPVerificationScreen" component={OTPVerificationScreen} />
         <Stack.Screen name="InfoPageScreen" component={InfoPageScreen} />
         <Stack.Screen name="RequestHapusAkunScreen" component={RequestHapusAkunScreen} />
- 
+ <Stack.Screen 
+  name="ForgotPinPage" 
+  component={ForgotPinPage}
+/>
         {/* HOME SEKARANG PAKAI BOTTOM TABS */}
         <Stack.Screen name="Home" component={BottomTabs} />
       </Stack.Navigator>
@@ -203,6 +208,7 @@ const styles = StyleSheet.create({
     width: 70,
     height: 70,
     borderRadius: 45,
+    marginLeft: 3,
     backgroundColor: 'white',
     borderWidth: 2,
     borderColor: '#F0F0F0',

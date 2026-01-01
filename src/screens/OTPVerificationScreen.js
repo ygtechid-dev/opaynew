@@ -233,7 +233,7 @@ export default function OTPVerificationScreen({ navigation, route }) {
             <Text style={styles.userName}>
               {userData?.f_name || 'User'} {userData?.l_name || ''}
             </Text>
-            <Text style={styles.memberType}>Basic Member</Text>
+            {/* <Text style={styles.memberType}>Basic Member</Text> */}
           </View>
 
           {/* OTP Section */}

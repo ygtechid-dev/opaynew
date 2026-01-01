@@ -12,17 +12,25 @@ import {
   Clipboard,
   Modal,
   TextInput,
-  Platform
+  Platform,
+  PermissionsAndroid
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+
 import Icon from 'react-native-vector-icons/Ionicons';
 import { API_URL, API_URL_PROD } from '../context/APIUrl';
-// import RNHTMLtoPDF from 'react-native-html-to-pdf';
-// import FileViewer from 'react-native-file-viewer';
+import { 
+  USBPrinter,
+  NetPrinter,
+  BLEPrinter,
+} from '@haroldtran/react-native-thermal-printer';
+import RNShare from 'react-native-share';
+import ViewShot from 'react-native-view-shot';
 
 export default function TransactionReceiptPage({ route, navigation }) {
-  const { product, phoneNumber, provider, transactionData, providerLogo } = route.params;
+  const { product, phoneNumber, provider,isAgenss,  transactionData, providerLogo } = route.params;
+const refundLockRef = useRef({});
 
   const [currentTransactionData, setCurrentTransactionData] = useState(transactionData);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -32,21 +40,37 @@ export default function TransactionReceiptPage({ route, navigation }) {
   const [loyaltyPointsAdded, setLoyaltyPointsAdded] = useState(new Set());
   const [walletDeducted, setWalletDeducted] = useState(new Set());
   const [fundRefunded, setFundRefunded] = useState(new Set());
-
+const [lockedRefId, setLockedRefId] = useState(null);
   const [isAgen, setIsAgen] = useState(false);
   const [isLoadingAgen, setIsLoadingAgen] = useState(true);
   const [agenData, setAgenData] = useState(null);
+  const [correctPriceSaved, setCorrectPriceSaved] = useState(false);
+
 
   // Print Modal States
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [printPrice, setPrintPrice] = useState('');
   const [storeName, setStoreName] = useState('');
+  
+  // Printer States
+  const [printers, setPrinters] = useState([]);
+  const [currentPrinter, setCurrentPrinter] = useState(null);
 
   const refreshIntervalRef = useRef(null);
   const viewShotRef = useRef(null);
 
+
+  
+  useEffect(() => {
+  const initialRefId = transactionData?.ref_id || `OPAY${Date.now().toString().slice(-8)}`;
+  setLockedRefId(initialRefId);
+}, []);
+
+
+
   useEffect(() => {
     initializePage();
+    requestBluetoothPermissions();
     return () => {
       if (refreshIntervalRef.current) {
         clearInterval(refreshIntervalRef.current);
@@ -54,161 +78,212 @@ export default function TransactionReceiptPage({ route, navigation }) {
     };
   }, []);
 
-  const initializePage = async () => {
-    await checkAgenStatus();
-    await deductWalletOnPending();
-    startAutoRefreshIfNeeded();
-  };
-
-  const checkAgenStatus = async () => {
-    try {
-      setIsLoadingAgen(true);
-      const userData = await AsyncStorage.getItem('userData');
-
-      if (!userData) {
-        setIsAgen(false);
-        setIsLoadingAgen(false);
-        return;
+  const requestBluetoothPermissions = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        const granted = await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        ]);
+        console.log('Bluetooth permissions:', granted);
+      } catch (err) {
+        console.warn('Permission error:', err);
       }
-
-      const userObj = JSON.parse(userData);
-      const response = await axios.get(
-        `${API_URL}/api/users/agen/user/${userObj.id}`
-      );
-
-      console.log('Agen Status Response:', response.data);
-
-      if (response.data && response.data.length > 0) {
-        setIsAgen(true);
-        setAgenData(response.data[0]);
-        setStoreName(response.data[0].nama_toko || '');
-      } else {
-        setIsAgen(false);
-      }
-    } catch (error) {
-      console.error('Error checking agen status:', error);
-      setIsAgen(false);
-    } finally {
-      setIsLoadingAgen(false);
     }
   };
 
+
+   const updateTransactionStatusInDatabase = async (
+  refId,
+  status,
+  message,
+  sn,
+  price
+) => {
+  try {
+    const body = {};
+
+    if (status) body.status = status;
+    if (message) body.message = message;
+    if (sn) body.serial_number = sn;
+    if (price) body.price = price;
+
+    // Buyer_last_saldo default (bisa diisi sesuai kebutuhan)
+    body.buyer_last_saldo = 0;
+
+    console.log("🔥 Update PPOB Payload FE:", body);
+
+    const response = await axios.put(
+      `${API_URL}/api/order-transaction/${refId}`,
+      body,
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+
+    console.log("🟢 Update PPOB Response:", response.data);
+
+    return response.data.success === true;
+  } catch (error) {
+    console.error('❌ Error updating transaction status FE:', error.response?.data || error);
+    return false;
+  }
+};
+
+
+
+  const saveCorrectPriceOnce = async () => {
+  try {
+    if (correctPriceSaved) return;
+
+    const refId = getTransactionId();
+    const correctPrice = getCorrectPrice();
+
+    console.log("💾 Saving correct price ONLY ONCE:", correctPrice);
+
+    const ok = await updateTransactionStatusInDatabase(
+      refId,
+      null,
+      null,
+      null,
+      correctPrice
+    );
+
+    if (ok) {
+      setCorrectPriceSaved(true);
+      console.log("✅ Correct price saved once");
+    } else {
+      console.log("❌ Failed to save correct price");
+    }
+  } catch (err) {
+    console.log("Error saving correct price once:", err);
+  }
+};
+
+
+ const initializePage = async () => {
+  await checkAgenStatus();  // tunggu isAgen ter-set
+  setTimeout(() => {
+    saveCorrectPriceOnce(); // jalankan SETELAH state update
+  }, 300);
+  startAutoRefreshIfNeeded();
+};
+
+  const checkAgenStatus = async () => {
+  try {
+    setIsLoadingAgen(true);
+
+    const userData = await AsyncStorage.getItem("userData");
+    if (!userData) return setIsAgen(false);
+
+    const userObj = JSON.parse(userData);
+
+    const response = await axios.get(`${API_URL}/api/users/agen/user/${userObj.id}`);
+    console.log("RESPONSE AGEN:", response.data);
+
+    const agen = response.data?.data;
+
+    if (Array.isArray(agen) && agen.length > 0) {
+      setIsAgen(true);
+      setAgenData(agen[0]);
+      setStoreName(agen[0].nama_konter || "");
+    } else {
+      setIsAgen(false);
+    }
+
+  } catch (error) {
+    console.log("❌ ERROR CHECK AGEN:", error);
+    setIsAgen(false);
+  } finally {
+    setIsLoadingAgen(false);
+  }
+};
+
+
+  const wasDeductedBefore = async (refId) => {
+  const key = `deduct_${refId}`;
+  const value = await AsyncStorage.getItem(key);
+  return value === 'true';
+};
+
+const markDeducted = async (refId) => {
+  const key = `deduct_${refId}`;
+  await AsyncStorage.setItem(key, 'true');
+};
+
+
   const getCorrectPrice = () => {
+    
+    console.log('isagensekrang', isAgen);
+    
     const typeName = product.type_name?.toLowerCase() || '';
 
     if (typeName === 'pascabayar') {
       return parseFloat(product.price || '0');
     }
 
-    if (isAgen) {
+    if (isAgenss) {
       return parseFloat(product.price || '0');
     } else {
-      return parseFloat(product.priceTierTwo || product.price || '0');
+      return parseFloat(product.priceTierTwo || '0');
     }
   };
 
-  const deductWalletOnPending = async () => {
-    const status = getTransactionStatus();
-    if (status === 'PENDING') {
-      const correctPrice = getCorrectPrice();
-      const refId = getTransactionId();
 
-      if (!walletDeducted.has(refId)) {
-        console.log('💳 Transaction is PENDING - Deducting wallet...');
-        const deductSuccess = await deductWalletBalance(correctPrice, refId);
 
-        if (deductSuccess) {
-          console.log('✅ Wallet deducted successfully');
-        }
-      }
+
+
+ const addFundToWallet = async (amount, refId) => {
+  try {
+    console.log("🟡 [REFUND] Checking refund for:", refId);
+
+    // 🔒 LOCK: jika sudah pernah berjalan → blokir
+    if (refundLockRef.current[refId]) {
+      console.log("⛔ [REFUND] Refund locked, skipping");
+      return true;
     }
-  };
 
-  const deductWalletBalance = async (amount, refId) => {
-    try {
-      if (walletDeducted.has(refId)) {
-        return true;
-      }
+    // cek storage
+    const refundedKey = `refund_${refId}`;
+    const refundedBefore = await AsyncStorage.getItem(refundedKey);
 
-     const userData = await AsyncStorage.getItem('userData');
-const userObj = JSON.parse(userData || '{}');
-
-const response = await axios.post(`${API_URL}/api/deduct-saldo/deduct`, {
-  user_id: userObj.id,   
-  amount: amount,
-  transaction_type: 'ppob_payment',
-  reference: refId,
-});
-
-      if (response.data) {
-        setWalletDeducted(prev => new Set([...prev, refId]));
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('Error deducting wallet:', error);
-      return false;
+    if (refundedBefore === "true") {
+      console.log("⚠️ [REFUND] Already refunded (AsyncStorage)");
+      refundLockRef.current[refId] = true; // sync lock
+      return true;
     }
-  };
 
-  const addFundToWallet = async (amount, refId) => {
-    try {
-      if (fundRefunded.has(refId)) {
-        return true;
-      }
+    // 🔥 → KUNCI agar tidak bisa dipanggil paralel
+    refundLockRef.current[refId] = true;
 
-      const userData = await AsyncStorage.getItem('userData');
-      if (!userData) return false;
+    console.log("🔥 [REFUND] Processing refund:", amount);
 
-      const userObj = JSON.parse(userData);
+    const userData = await AsyncStorage.getItem('userData');
+    if (!userData) return false;
+    const userObj = JSON.parse(userData);
 
-      const response = await axios.post(`${API_URL}/api/wallet/add`, {
-        customer_id: userObj.id,
-        amount: amount,
-        referance: refId,
-        payment_method: 'QRIS',
-      });
+    const response = await axios.post(`${API_URL}/api/wallet-transactions/add`, {
+      customer_id: userObj.id,
+      amount: amount,
+      referance: refId,
+      payment_method: "QRIS",
+    });
 
-      if (response.data.success) {
-        setFundRefunded(prev => new Set([...prev, refId]));
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('Error adding fund:', error);
+    if (response.data.success) {
+      console.log("🟢 [REFUND] REFUND SUCCESS for:", refId);
+      await AsyncStorage.setItem(refundedKey, "true");
+      return true;
+    } else {
+      console.log("❌ [REFUND] API error:", response.data);
       return false;
     }
-  };
 
-  const addLoyaltyPoints = async (refId, nominalPoint) => {
-    try {
-      if (loyaltyPointsAdded.has(refId)) {
-        return true;
-      }
+  } catch (err) {
+    console.error("❌ [REFUND] Error:", err);
+    return false;
+  }
+};
 
-      const userData = await AsyncStorage.getItem('userData');
-      if (!userData) return false;
 
-      const userObj = JSON.parse(userData);
-
-      const response = await axios.post(`${API_URL}/api/loyalty/add`, {
-        point: nominalPoint,
-        user_id: userObj.id,
-        ref_id: refId,
-        source: 'ppob_transaction',
-        type: 'add',
-      });
-
-      if (response.data.success) {
-        setLoyaltyPointsAdded(prev => new Set([...prev, refId]));
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('Error adding loyalty points:', error);
-      return false;
-    }
-  };
 
   const startAutoRefreshIfNeeded = () => {
     if (isTransactionPending() && autoRefreshCount < maxAutoRefreshAttempts) {
@@ -229,6 +304,8 @@ const response = await axios.post(`${API_URL}/api/deduct-saldo/deduct`, {
     if (isRefreshing) return;
 
     setIsRefreshing(true);
+    const userData = await AsyncStorage.getItem('userData');
+    const userObj = JSON.parse(userData || '{}');
 
     try {
       const requestBody = {
@@ -236,8 +313,10 @@ const response = await axios.post(`${API_URL}/api/deduct-saldo/deduct`, {
         buyer_sku_code: product.buyer_sku_code,
         ref_id: getTransactionId(),
         testing: false,
+        user_id: userObj.id
       };
 
+      
       const response = await axios.post(
         `${API_URL_PROD}/api/check-transaction`,
         requestBody
@@ -253,42 +332,73 @@ const response = await axios.post(`${API_URL}/api/deduct-saldo/deduct`, {
 
         const currentStatus = getTransactionStatus();
 
-        if (newStatus !== currentStatus) {
+       
+          
           console.log(`Status changed: ${currentStatus} → ${newStatus}`);
 
-          const correctPrice = getCorrectPrice();
+         if (newStatus !== currentStatus) {
+  console.log(`Status changed: ${currentStatus} → ${newStatus}`);
+
+  const correctPrice = getCorrectPrice();
+  const newSn = responseData.digiflazz_response?.data?.sn || "";
+  const newMessage = responseData.digiflazz_response?.data?.message || "";
+
+  // 🔥 UPDATE STATUS KE DATABASE
+  await updateTransactionStatusInDatabase(
+    getTransactionId(),
+    newStatus,
+    newMessage,
+    newSn,
+    correctPrice
+  )
 
           if (newStatus === 'SUCCESS' || newStatus === 'SUKSES') {
-            // Add loyalty points
-            const nominalPoint = product.nominal_point || 10;
-            await addLoyaltyPoints(getTransactionId(), nominalPoint);
-
-            Alert.alert('Sukses', 'Transaksi berhasil!');
+            stopAutoRefresh();
+            setAutoRefreshCount(0);
           } else if (newStatus === 'FAILED' || newStatus === 'GAGAL') {
-            // Refund
-            await addFundToWallet(correctPrice, getTransactionId());
-            Alert.alert('Gagal', 'Transaksi gagal, saldo dikembalikan');
+          if (!refundLockRef.current[getTransactionId()]) {
+  await addFundToWallet(correctPrice, getTransactionId());
+}
+stopAutoRefresh();
+            setAutoRefreshCount(0);
           }
 
           setCurrentTransactionData(responseData);
         }
 
-        if (isAutoRefresh) {
-          setAutoRefreshCount(prev => prev + 1);
-        }
-
-        if (!isTransactionPending()) {
+        if (newStatus !== 'PENDING') {
+          console.log('✅ Status is no longer PENDING, stopping auto-refresh');
           stopAutoRefresh();
+          setAutoRefreshCount(0);
+        } else {
+          if (isAutoRefresh) {
+            setAutoRefreshCount(prev => {
+              const nextCount = prev + 1;
+              
+              if (nextCount >= maxAutoRefreshAttempts) {
+                console.log('⚠️ Max auto-refresh attempts reached, stopping...');
+                stopAutoRefresh();
+              }
+              
+              return nextCount;
+            });
+          }
         }
-      }
+      
+    }
     } catch (error) {
-      console.error('Error refreshing transaction:', error);
+      console.error('Error refreshing transaction:', error.response);
+      
+      if (isAutoRefresh && autoRefreshCount >= 5) {
+        console.log('⚠️ Multiple errors detected, stopping auto-refresh');
+        stopAutoRefresh();
+      }
     } finally {
       setIsRefreshing(false);
     }
   };
 
-  const getTransactionId = () => {
+ const getTransactionId = () => {
     if (currentTransactionData?.ref_id) {
       return currentTransactionData.ref_id;
     }
@@ -375,236 +485,183 @@ const response = await axios.post(`${API_URL}/api/deduct-saldo/deduct`, {
     Alert.alert('Berhasil', `${text} disalin ke clipboard`);
   };
 
-  const shareReceipt = () => {
-    const transactionId = getTransactionId();
-    const dateTime = formatDateTime();
-    const price = getPrice();
-    const productName = getProductName();
-    const status = getTransactionStatus();
+ const shareReceipt = async () => {
+  try {
+    const text = generateShareText();
+    await Share.share({ message: text });
+  } catch (error) {
+    console.log('Share error:', error);
+    Alert.alert('Gagal', 'Tidak bisa membagikan struk.');
+  }
+};
 
-    let statusEmoji = '⏳';
-    if (isTransactionSuccessful()) statusEmoji = '✅';
-    if (isTransactionFailed()) statusEmoji = '❌';
+const generateShareText = () => {
+  const transactionId = getTransactionId();
+  const dateTime = formatDateTime(); // hasil "24 Nov 2025 - 11:35"
+  const [datePart, timePart] = dateTime.split(" - ");
+  const productName = getProductName();
+  const status = getTransactionStatus();
+  const finalPrice = printPrice ? printPrice : getPrice();
 
-    let shareText = `
-🧾 STRUK TRANSAKSI ${productName}
+  let text = 
+`STRUK TRANSAKSI ${productName}
 
-📅 ${dateTime}
-🆔 ID Transaksi: ${transactionId}
+Tanggal : ${datePart}
+Waktu   : ${timePart}
+ID Transaksi : ${transactionId}
 
-${statusEmoji} ${status}
+Status : ${status}
 
-📦 Produk: ${productName}
-📱 Nomor: ${phoneNumber}
-💰 Harga: Rp ${price}
+Produk : ${productName}
+Nomor  : ${phoneNumber}
+Harga  : Rp ${finalPrice}
 `;
 
-    if (isPLNProduct() && isTransactionSuccessful()) {
-      const token = extractPLNToken();
-      if (token) {
-        shareText += `\n🔑 Token PLN: ${token}`;
-      }
+  // Token PLN (hanya kalau sukses)
+  if (isPLNProduct() && isTransactionSuccessful()) {
+    const token = extractPLNToken();
+    if (token) {
+      text += `\nToken PLN : ${token}\n`;
     }
+  }
 
-    shareText += '\n\nTerima kasih telah menggunakan layanan kami!';
+  text += `
+Terima kasih telah menggunakan layanan kami`;
 
-    Share.share({ message: shareText });
-  };
-
-  const handlePrintStruk = () => {
-    // setShowPrintModal(true);
-    // setPrintPrice(getPrice());
-  };
-
-  const generatePrintHTML = (sellPrice) => {
-    const transactionId = getTransactionId();
-    const dateTime = formatDateTime();
-    const productName = getProductName();
-    const buyPrice = getPrice();
-    const profit = parseFloat(sellPrice.replace(/\./g, '')) - parseFloat(buyPrice.replace(/\./g, ''));
-    const displayStoreName = isAgen ? (agenData?.nama_toko || 'Toko Saya') : storeName;
-
-    let html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    body {
-      font-family: 'Courier New', monospace;
-      font-size: 12px;
-      padding: 10px;
-      max-width: 280px;
-    }
-    .header {
-      text-align: center;
-      margin-bottom: 10px;
-      border-bottom: 1px dashed #000;
-      padding-bottom: 10px;
-    }
-    .store-name {
-      font-size: 16px;
-      font-weight: bold;
-      margin-bottom: 5px;
-    }
-    .section {
-      margin-bottom: 10px;
-      border-bottom: 1px dashed #000;
-      padding-bottom: 10px;
-    }
-    .row {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 5px;
-    }
-    .label {
-      font-weight: normal;
-    }
-    .value {
-      font-weight: bold;
-      text-align: right;
-    }
-    .total {
-      font-size: 14px;
-      font-weight: bold;
-    }
-    .footer {
-      text-align: center;
-      margin-top: 10px;
-      font-size: 10px;
-    }
-    .profit {
-      color: #2F318B;
-      font-weight: bold;
-    }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <div class="store-name">${displayStoreName}</div>
-    <div>${dateTime}</div>
-  </div>
-
-  <div class="section">
-    <div class="row">
-      <span class="label">ID Transaksi:</span>
-      <span class="value">${transactionId}</span>
-    </div>
-    <div class="row">
-      <span class="label">Status:</span>
-      <span class="value">${getTransactionStatus()}</span>
-    </div>
-  </div>
-
-  <div class="section">
-    <div class="row">
-      <span class="label">Produk:</span>
-      <span class="value">${productName}</span>
-    </div>
-    <div class="row">
-      <span class="label">Nomor:</span>
-      <span class="value">${phoneNumber}</span>
-    </div>
-  </div>
-
-  <div class="section">
-    <div class="row">
-      <span class="label">Harga Beli:</span>
-      <span class="value">Rp ${buyPrice}</span>
-    </div>
-    <div class="row">
-      <span class="label">Harga Jual:</span>
-      <span class="value">Rp ${sellPrice}</span>
-    </div>
-    <div class="row">
-      <span class="label">Keuntungan:</span>
-      <span class="value profit">Rp ${formatPrice(profit.toString())}</span>
-    </div>
-  </div>
-`;
-
-    if (getSerialNumber()) {
-      html += `
-  <div class="section">
-    <div class="row">
-      <span class="label">SN:</span>
-    </div>
-    <div class="value" style="word-wrap: break-word; text-align: left; margin-top: 5px;">
-      ${getSerialNumber()}
-    </div>
-  </div>
-`;
-    }
-
-    if (isPLNProduct() && isTransactionSuccessful() && extractPLNToken()) {
-      html += `
-  <div class="section">
-    <div class="row">
-      <span class="label">Token PLN:</span>
-    </div>
-    <div class="value" style="font-size: 16px; text-align: center; margin-top: 5px; letter-spacing: 2px;">
-      ${extractPLNToken()}
-    </div>
-  </div>
-`;
-    }
-
-    html += `
-  <div class="footer">
-    <p>Terima kasih atas pembelian Anda</p>
-    <p>Powered by Ditokoku.id</p>
-  </div>
-</body>
-</html>
-`;
-
-    return html;
-  };
-
- const printStruk = async () => {
-//   if (!printPrice) {
-//     Alert.alert('Error', 'Masukkan harga jual');
-//     return;
-//   }
-
-//   if (!isAgen && !storeName.trim()) {
-//     Alert.alert('Error', 'Masukkan nama toko');
-//     return;
-//   }
-
-//   try {
-//     const html = generatePrintHTML(printPrice);
-
-//     // Generate PDF
-//     const options = {
-//       html,
-//       fileName: `struk_${getTransactionId()}`,
-//       directory: 'Documents',
-//     };
-
-//     const file = await RNHTMLtoPDF.convert(options);
-
-//     console.log('PDF generated:', file.filePath);
-
-//     // Buka PDF untuk print / share
-//     await FileViewer.open(file.filePath, { showOpenWithDialog: true });
-
-//     setShowPrintModal(false);
-//     setPrintPrice('');
-//     setStoreName(isAgen ? agenData?.nama_toko || '' : '');
-
-//   } catch (error) {
-//     console.error('Error printing:', error);
-//     Alert.alert('Error', 'Gagal mencetak struk');
-//   }
+  return text;
 };
 
 
+
+  const handlePrintStruk = () => {
+    setShowPrintModal(true);
+    setPrintPrice(getPrice());
+  };
+
+  // =============== THERMAL PRINTER FUNCTIONS ===============
+  
+  const scanPrinters = async () => {
+    try {
+      const devices = await BLEPrinter.init();
+      console.log('Found printers:', devices);
+      setPrinters(devices);
+      
+      if (devices.length === 0) {
+        Alert.alert('Info', 'Tidak ada printer ditemukan. Pastikan Bluetooth aktif dan printer sudah dinyalakan.');
+      }
+    } catch (error) {
+      console.error('Scan error:', error);
+      Alert.alert('Error', 'Gagal mencari printer');
+    }
+  };
+
+  const connectPrinter = async (printer) => {
+    try {
+      await BLEPrinter.connectPrinter(printer.inner_mac_address || printer.address);
+      setCurrentPrinter(printer);
+      Alert.alert('Berhasil', `Terhubung ke ${printer.device_name || printer.name}`);
+    } catch (error) {
+      console.error('Connect error:', error);
+      Alert.alert('Error', 'Gagal terhubung ke printer');
+    }
+  };
+
+  const printStruk = async () => {
+    if (!printPrice) {
+      Alert.alert('Error', 'Masukkan harga jual');
+      return;
+    }
+
+    if (!isAgen && !storeName.trim()) {
+      Alert.alert('Error', 'Masukkan nama toko');
+      return;
+    }
+
+    if (!currentPrinter) {
+      await scanPrinters();
+      return;
+    }
+
+    try {
+      const transactionId = getTransactionId();
+      const dateTime = formatDateTime();
+      const productName = getProductName();
+      const buyPrice = getPrice();
+      const sellPrice = printPrice;
+      const profit = parseFloat(sellPrice.replace(/\./g, '')) - parseFloat(buyPrice.replace(/\./g, ''));
+      const displayStoreName = isAgen ? (agenData?.nama_konter || 'Toko Saya') : storeName;
+
+      // Print with column formatting
+      await BLEPrinter.printText(`\n`);
+      await BLEPrinter.printText(`[C]<font size='big'>${displayStoreName}</font>\n`);
+      await BLEPrinter.printText(`[C]${dateTime}\n`);
+      await BLEPrinter.printText(`[C]--------------------------------\n`);
+      
+      // Transaction Info
+      await BLEPrinter.printText(`[L]ID: ${transactionId}\n`);
+      await BLEPrinter.printText(`[L]Status: ${getTransactionStatus()}\n`);
+      await BLEPrinter.printText(`[C]--------------------------------\n`);
+      
+      // Product Info
+      await BLEPrinter.printText(`[L]Produk:\n[L]${productName}\n`);
+      await BLEPrinter.printText(`[L]Nomor: ${phoneNumber}\n`);
+      await BLEPrinter.printText(`[C]--------------------------------\n`);
+      
+      // Price columns
+      await BLEPrinter.printColumnsText(
+        [`Harga Beli`, `Rp ${buyPrice}`],
+        [1, 1],
+        [BLEPrinter.ALIGN.LEFT, BLEPrinter.ALIGN.RIGHT],
+        {}
+      );
+      
+      await BLEPrinter.printColumnsText(
+        [`Harga Jual`, `Rp ${sellPrice}`],
+        [1, 1],
+        [BLEPrinter.ALIGN.LEFT, BLEPrinter.ALIGN.RIGHT],
+        {}
+      );
+      
+      await BLEPrinter.printColumnsText(
+        [`Keuntungan`, `Rp ${formatPrice(profit.toString())}`],
+        [1, 1],
+        [BLEPrinter.ALIGN.LEFT, BLEPrinter.ALIGN.RIGHT],
+        {}
+      );
+      
+      await BLEPrinter.printText(`[C]--------------------------------\n`);
+      
+      // Serial Number
+      if (getSerialNumber()) {
+        await BLEPrinter.printText(`[L]SN:\n`);
+        await BLEPrinter.printText(`[L]${getSerialNumber()}\n`);
+        await BLEPrinter.printText(`[C]--------------------------------\n`);
+      }
+      
+      // PLN Token
+      if (isPLNProduct() && isTransactionSuccessful() && extractPLNToken()) {
+        await BLEPrinter.printText(`[C]<font size='big'>TOKEN PLN</font>\n`);
+        await BLEPrinter.printText(`[C]<font size='tall'>${extractPLNToken()}</font>\n`);
+        await BLEPrinter.printText(`[C]--------------------------------\n`);
+      }
+      
+      // Footer
+      await BLEPrinter.printText(`[C]Terima kasih atas\n`);
+      await BLEPrinter.printText(`[C]pembelian Anda\n`);
+      await BLEPrinter.printText(`[C]Powered by Ditokoku.id\n`);
+      await BLEPrinter.printText(`\n\n\n`);
+
+      setShowPrintModal(false);
+      setPrintPrice('');
+      setStoreName(isAgen ? agenData?.nama_konter || '' : '');
+      
+      Alert.alert('Berhasil', 'Struk berhasil dicetak');
+
+    } catch (error) {
+      console.error('Print error:', error);
+      Alert.alert('Error', 'Gagal mencetak struk: ' + error.message);
+    }
+  };
 
   const renderHeader = () => {
     if (isTransactionPending()) {
@@ -654,7 +711,6 @@ ${statusEmoji} ${status}
   const renderPendingContent = () => {
     return (
       <>
-        {/* Provider Logo */}
         <View style={styles.providerLogoContainer}>
           <Image
             source={providerLogo}
@@ -663,7 +719,6 @@ ${statusEmoji} ${status}
           />
         </View>
 
-        {/* Transaction Card */}
         <View style={styles.pendingCardWrapper}>
           <View style={styles.pendingCardHeader}>
             <Text style={styles.pendingCardDate}>{formatDateTime()}</Text>
@@ -690,7 +745,6 @@ ${statusEmoji} ${status}
           </View>
         </View>
 
-        {/* Pending Status Badge */}
         <View style={styles.pendingBadge}>
           <View style={styles.pendingIconCircle}>
             <Icon name="time" size={12} color="#FFF" />
@@ -698,7 +752,6 @@ ${statusEmoji} ${status}
           <Text style={styles.pendingBadgeText}>Transaksi Pending</Text>
         </View>
 
-        {/* Pending Info Box */}
         <View style={styles.pendingInfoBox}>
           <Text style={styles.pendingInfoText}>
             Transaksi sedang diproses.{'\n'}
@@ -710,7 +763,6 @@ ${statusEmoji} ${status}
           </Text>
         </View>
 
-        {/* Action Buttons */}
         <View style={styles.actionButtonsRow}>
           <TouchableOpacity style={styles.helpButton}>
             <Image
@@ -726,10 +778,9 @@ ${statusEmoji} ${status}
           </TouchableOpacity>
         </View>
 
-        {/* Back to Home */}
         <TouchableOpacity
           style={styles.backToHomeButton}
-          onPress={() => navigation.navigate('Home')}
+          onPress={() => navigation.replace('Home')}
         >
           <Text style={styles.backToHomeText}>Kembali Ke Beranda</Text>
         </TouchableOpacity>
@@ -740,9 +791,7 @@ ${statusEmoji} ${status}
   const renderCompletedContent = () => {
     return (
       <>
-        {/* Transaction Card */}
         <View style={styles.completedCard}>
-          {/* Card Header */}
           <View style={styles.completedCardHeader}>
             <Text style={styles.completedCardHeaderStatus}>
               {isTransactionSuccessful() ? 'Transaksi Berhasil' : 'Transaksi Gagal'}
@@ -750,9 +799,7 @@ ${statusEmoji} ${status}
             <Text style={styles.completedCardHeaderDate}>{formatDateTime()}</Text>
           </View>
 
-          {/* Card Body */}
           <View style={styles.completedCardBody}>
-            {/* Success/Failed Icon */}
             {isTransactionSuccessful() ? (
               <Image
                 source={require('../assets/successtrx.png')}
@@ -767,7 +814,6 @@ ${statusEmoji} ${status}
               />
             )}
 
-            {/* Detail Rows */}
             {renderDetailRow('Nama Produk', getProductName())}
             {renderDivider()}
             {renderDetailRow('Nomor Telepon', phoneNumber)}
@@ -777,13 +823,11 @@ ${statusEmoji} ${status}
             {renderDetailRow('Keterangan', getProductName())}
             {renderDivider()}
 
-            {/* Total Row */}
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Total Pembayaran</Text>
               <Text style={styles.totalValue}>Rp {getPrice()}</Text>
             </View>
 
-            {/* Serial Number */}
             {isTransactionSuccessful() && getSerialNumber() && (
               <>
                 {renderDivider()}
@@ -805,7 +849,6 @@ ${statusEmoji} ${status}
               </>
             )}
 
-            {/* PLN Token */}
             {isPLNProduct() && isTransactionSuccessful() && extractPLNToken() && (
               <>
                 {renderDivider()}
@@ -829,14 +872,12 @@ ${statusEmoji} ${status}
           </View>
         </View>
 
-        {/* Bottom Message */}
         <Text style={styles.bottomMessage}>
           {isTransactionSuccessful()
             ? 'Pembayaran anda telah berhasil.\nTerimakasih telah menggunakan O-Payment dari ditokoku.id untuk melakukan transaksi.'
             : 'Pembayaran gagal. Saldo telah dikembalikan ke akun Anda.'}
         </Text>
 
-        {/* Action Buttons */}
         <View style={styles.completedActionButtons}>
           <TouchableOpacity
             style={styles.homeButton}
@@ -850,7 +891,6 @@ ${statusEmoji} ${status}
           </TouchableOpacity>
         </View>
 
-        {/* Print Button - Only show for successful transactions */}
         {isTransactionSuccessful() && (
           <TouchableOpacity style={styles.printButton} onPress={handlePrintStruk}>
             <Icon name="print" size={20} color="#FFF" />
@@ -876,6 +916,52 @@ ${statusEmoji} ${status}
     return <View style={styles.divider} />;
   };
 
+  const renderPrinterSelectionModal = () => {
+    return (
+      <Modal
+        visible={printers ? printers.length > 0 && !currentPrinter : false}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setPrinters([])}
+      >
+        <View style={styles.printModalOverlay}>
+          <View style={styles.printModalContent}>
+            <View style={styles.printModalHeader}>
+              <Text style={styles.printModalTitle}>Pilih Printer</Text>
+              <TouchableOpacity onPress={() => setPrinters([])}>
+                <Icon name="close" size={24} color="#000" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.printerList}>
+              {printers.map((printer, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={styles.printerItem}
+                  onPress={() => {
+                    connectPrinter(printer);
+                    setPrinters([]);
+                  }}
+                >
+                  <Icon name="print" size={24} color="#2F318B" />
+                  <View style={styles.printerInfo}>
+                    <Text style={styles.printerName}>
+                      {printer.device_name || printer.name || 'Unknown Printer'}
+                    </Text>
+                    <Text style={styles.printerAddress}>
+                      {printer.inner_mac_address || printer.address || 'No Address'}
+                    </Text>
+                  </View>
+                  <Icon name="chevron-forward" size={20} color="#999" />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+
   const renderPrintModal = () => {
     return (
       <Modal
@@ -893,8 +979,27 @@ ${statusEmoji} ${status}
               </TouchableOpacity>
             </View>
 
-            <View style={styles.printModalBody}>
-              {/* Store Name Input - Only if not Agen */}
+            <ScrollView style={styles.printModalBody}>
+              {currentPrinter ? (
+                <View style={styles.printerStatusConnected}>
+                  <Icon name="checkmark-circle" size={20} color="#4CAF50" />
+                  <Text style={styles.printerStatusText}>
+                    Terhubung: {currentPrinter.device_name || currentPrinter.name}
+                  </Text>
+                  <TouchableOpacity onPress={() => setCurrentPrinter(null)}>
+                    <Text style={styles.changePrinterText}>Ganti</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.scanPrinterButton}
+                  onPress={scanPrinters}
+                >
+                  <Icon name="bluetooth" size={20} color="#2F318B" />
+                  <Text style={styles.scanPrinterText}>Cari Printer Bluetooth</Text>
+                </TouchableOpacity>
+              )}
+
               {!isAgen && (
                 <View style={styles.printInputGroup}>
                   <Text style={styles.printInputLabel}>Nama Toko</Text>
@@ -907,19 +1012,17 @@ ${statusEmoji} ${status}
                 </View>
               )}
 
-              {/* Agen Store Name Display */}
               {isAgen && (
                 <View style={styles.printInputGroup}>
                   <Text style={styles.printInputLabel}>Nama Toko</Text>
                   <View style={styles.printInputDisabled}>
                     <Text style={styles.printInputDisabledText}>
-                      {agenData?.nama_toko || 'Toko Agen'}
+                      {agenData?.nama_konter || 'Toko Agen'}
                     </Text>
                   </View>
                 </View>
               )}
 
-              {/* Buy Price Display */}
               <View style={styles.printInputGroup}>
                 <Text style={styles.printInputLabel}>Harga Beli</Text>
                 <View style={styles.printInputDisabled}>
@@ -927,7 +1030,6 @@ ${statusEmoji} ${status}
                 </View>
               </View>
 
-              {/* Sell Price Input */}
               <View style={styles.printInputGroup}>
                 <Text style={styles.printInputLabel}>Harga Jual</Text>
                 <TextInput
@@ -939,7 +1041,6 @@ ${statusEmoji} ${status}
                 />
               </View>
 
-              {/* Profit Display */}
               {printPrice && (
                 <View style={styles.profitBox}>
                   <Text style={styles.profitLabel}>Keuntungan:</Text>
@@ -954,9 +1055,9 @@ ${statusEmoji} ${status}
                   </Text>
                 </View>
               )}
-            </View>
+            </ScrollView>
 
-            <View style={styles.printModalFooter}>
+          <View style={styles.printModalFooter}>
               <TouchableOpacity
                 style={styles.printModalCancelButton}
                 onPress={() => setShowPrintModal(false)}
@@ -969,6 +1070,14 @@ ${statusEmoji} ${status}
                 <Text style={styles.printModalPrintText}>Cetak</Text>
               </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+              style={styles.sharePrintButton}
+              onPress={shareReceipt}
+            >
+              <Icon name="share-social" size={20} color="#FFF" />
+              <Text style={styles.sharePrintButtonText}>Share Struk</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -977,24 +1086,25 @@ ${statusEmoji} ${status}
 
   return (
     <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {renderHeader()}
-        {isTransactionPending() ? renderPendingContent() : renderCompletedContent()}
-      </ScrollView>
+      <ViewShot ref={viewShotRef} style={{ flex: 1 }} options={{ format: 'png', quality: 0.9 }}>
+        <ScrollView showsVerticalScrollIndicator={false}>
+          {renderHeader()}
+          {isTransactionPending() ? renderPendingContent() : renderCompletedContent()}
+        </ScrollView>
+      </ViewShot>
 
       {renderPrintModal()}
+      {renderPrinterSelectionModal()}
     </View>
   );
-
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFF',
-  },
 
-  // ===== HEADER STYLES =====
+const styles = StyleSheet.create({
+  container: { 
+    flex: 1, 
+    backgroundColor: '#FFF' 
+  },
   pendingHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1048,8 +1158,6 @@ const styles = StyleSheet.create({
     width: 18,
     height: 18,
   },
-
-  // ===== PENDING CONTENT STYLES =====
   providerLogoContainer: {
     alignItems: 'center',
     marginBottom: 30,
@@ -1162,6 +1270,25 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 5,
   },
+  sharePrintButton: {
+  flexDirection: 'row',
+  backgroundColor: '#2196F3',
+  borderRadius: 12,
+  paddingVertical: 12,
+  justifyContent: 'center',
+  alignItems: 'center',
+  marginTop: 10,
+  width: '90%',
+  alignSelf: 'center',
+  gap: 8,
+},
+sharePrintButtonText: {
+  fontSize: 16,
+  fontWeight: 'bold',
+  color: '#FFF',
+  fontFamily: 'Poppins-Bold',
+},
+
   waIcon: {
     width: 29,
     height: 29,
@@ -1196,8 +1323,6 @@ const styles = StyleSheet.create({
     color: '#2F318B',
     fontFamily: 'Poppins-Bold',
   },
-
-  // ===== COMPLETED CONTENT STYLES =====
   completedCard: {
     marginHorizontal: 34,
     marginBottom: 31,
@@ -1287,8 +1412,6 @@ const styles = StyleSheet.create({
     color: '#000',
     fontFamily: 'Poppins-Bold',
   },
-
-  // ===== SN BOX STYLES =====
   snBox: {
     marginVertical: 15,
     marginHorizontal: 8,
@@ -1328,8 +1451,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     marginLeft: 8,
   },
-
-  // ===== PLN BOX STYLES =====
   plnBox: {
     marginVertical: 15,
     marginHorizontal: 8,
@@ -1370,8 +1491,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     marginLeft: 8,
   },
-
-  // ===== BOTTOM MESSAGE =====
   bottomMessage: {
     fontSize: 10,
     color: '#808080',
@@ -1380,8 +1499,6 @@ const styles = StyleSheet.create({
     marginBottom: 50,
     fontFamily: 'Poppins-Regular',
   },
-
-  // ===== COMPLETED ACTION BUTTONS =====
   completedActionButtons: {
     flexDirection: 'row',
     marginHorizontal: 33,
@@ -1420,8 +1537,6 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 5,
   },
-
-  // ===== PRINT BUTTON =====
   printButton: {
     flexDirection: 'row',
     backgroundColor: '#4CAF50',
@@ -1444,8 +1559,6 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     fontFamily: 'Poppins-Bold',
   },
-
-  // ===== PRINT MODAL STYLES =====
   printModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -1456,6 +1569,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingBottom: 20,
+    maxHeight: '80%',
   },
   printModalHeader: {
     flexDirection: 'row',
@@ -1565,5 +1679,66 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#FFF',
     fontFamily: 'Poppins-Bold',
+  },
+  printerList: {
+    maxHeight: 400,
+    paddingHorizontal: 20,
+  },
+  printerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  printerInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  printerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+    fontFamily: 'Poppins-SemiBold',
+  },
+  printerAddress: {
+    fontSize: 12,
+    color: '#666',
+    fontFamily: 'Poppins-Regular',
+  },
+  printerStatusConnected: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F5E9',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  printerStatusText: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#4CAF50',
+    fontFamily: 'Poppins-Medium',
+  },
+  changePrinterText: {
+    fontSize: 14,
+    color: '#2F318B',
+    fontFamily: 'Poppins-SemiBold',
+  },
+  scanPrinterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F5F5F5',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  scanPrinterText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#2F318B',
+    fontFamily: 'Poppins-SemiBold',
   },
 });

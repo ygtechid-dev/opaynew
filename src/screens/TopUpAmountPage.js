@@ -160,7 +160,7 @@ export default function TopUpAmountPage({ route, navigation }) {
       return numAmount === minTopupAmount;
     }
 
-    return numAmount >= 10000;
+    return numAmount >= 1000;
   };
 
   const getUserData = async () => {

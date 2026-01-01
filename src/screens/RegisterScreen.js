@@ -14,6 +14,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import axios from 'axios';
 import { API_URL } from '../context/APIUrl';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { OneSignal } from 'react-native-onesignal';
 
 export default function RegisterScreen({ navigation, route }) {
   const { phone } = route.params || {};
@@ -22,6 +23,132 @@ export default function RegisterScreen({ navigation, route }) {
   const [email, setEmail] = useState('');
   const [referralCode, setReferralCode] = useState('');
   const [loading, setLoading] = useState(false);
+
+const sendWelcomeEmail = async (userEmail, userName) => {
+  try {
+    const emailHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+          }
+          .container {
+            max-width: 600px;
+            margin: 40px auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          }
+          .header {
+            background-color: #5DCBAD;
+            padding: 30px 20px;
+            text-align: center;
+          }
+          .header h1 {
+            color: #ffffff;
+            margin: 0;
+            font-size: 24px;
+          }
+          .content {
+            padding: 40px 30px;
+            color: #333333;
+            line-height: 1.8;
+          }
+          .content h2 {
+            color: #5DCBAD;
+            font-size: 20px;
+            margin-bottom: 20px;
+          }
+          .content p {
+            margin-bottom: 15px;
+            font-size: 15px;
+          }
+          .footer {
+            background-color: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            color: #888888;
+            font-size: 13px;
+          }
+          .signature {
+            margin-top: 30px;
+            font-weight: bold;
+            color: #5DCBAD;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Pendaftaran Berhasil – Ditokoku</h1>
+          </div>
+          
+          <div class="content">
+            <h2>Halo, ${userName}</h2>
+            
+            <p>
+              Akun kamu di <b>Ditokoku</b> berhasil dibuat dan sudah siap digunakan.
+            </p>
+
+            <p>
+              Di fitur <b>PPOB</b>, status kamu saat ini adalah <b>Agen Basic</b>, jadi kamu sudah
+              bisa mulai jualan pulsa, paket data, token PLN, dan pembayaran lainnya.
+            </p>
+
+            <p>
+              Kalau ingin dapat keuntungan lebih, silakan daftar <b>Agen Platinum</b> langsung dari menu PPOB di aplikasi.
+            </p>
+
+            <p>Terima kasih sudah bergabung bersama Ditokoku.</p>
+
+            <p class="signature">Salam,<br>Tim Ditokoku</p>
+          </div>
+          
+          <div class="footer">
+            <p>© 2024 Ditokoku. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const emailText = `
+Pendaftaran Berhasil – Ditokoku
+
+Halo ${userName},
+
+Akun kamu di Ditokoku berhasil dibuat dan sudah siap digunakan.
+
+Di fitur PPOB, status kamu saat ini adalah Agen Basic, jadi kamu sudah bisa mulai jualan pulsa, paket data, token PLN, dan pembayaran lainnya.
+
+Kalau ingin dapat keuntungan lebih, silakan daftar Agen Platinum langsung dari menu PPOB di aplikasi.
+
+Terima kasih sudah bergabung bersama Ditokoku.
+
+Salam,
+Tim Ditokoku
+    `;
+
+    await axios.post(`${API_URL}/api/emailnotif/send-email`, {
+      to: userEmail,
+      subject: "Pendaftaran Berhasil – Ditokoku",
+      text: emailText,
+      html: emailHtml,
+    });
+
+    console.log("✅ Welcome email sent successfully");
+  } catch (error) {
+    console.error("❌ Failed to send welcome email:", error);
+  }
+};
+
 
   const handleRegister = async () => {
     // Validasi
@@ -75,9 +202,13 @@ export default function RegisterScreen({ navigation, route }) {
         // Registrasi berhasil
         const { data: userData, token } = response.data;
 
-        // Simpan token dan user data ke AsyncStorage jika diperlukan
+        // Simpan token dan user data ke AsyncStorage
         await AsyncStorage.setItem('userToken', token);
         await AsyncStorage.setItem('userData', JSON.stringify(userData));
+
+        // Kirim welcome email
+        sendWelcomeEmail(email.trim().toLowerCase(), fullName.trim());
+         OneSignal.login(String(userData.id));
 
         Alert.alert(
           'Berhasil',
@@ -182,19 +313,6 @@ export default function RegisterScreen({ navigation, route }) {
             editable={!loading}
           />
         </View>
-
-        {/* Referral Code Input */}
-        {/* <View style={styles.inputContainer}>
-          <Icon name="git-network-outline" size={20} color="#999" style={styles.inputIcon} />
-          <TextInput
-            placeholder="Kode Referensi (Opsional)"
-            value={referralCode}
-            onChangeText={setReferralCode}
-            style={styles.input}
-            placeholderTextColor="#999"
-            editable={!loading}
-          />
-        </View> */}
 
         <View style={styles.footer}>
           <TouchableOpacity 

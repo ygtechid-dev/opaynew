@@ -23,14 +23,17 @@ export default function HomeTab({navigation}) {
   const scrollViewRef = useRef(null);
   const [isAgen, setIsAgen] = useState(false);
   const [saldoShow, setSaldoShow] = useState(false);
-const [currentBanner, setCurrentBanner] = React.useState(0);
+  const [currentBanner, setCurrentBanner] = React.useState(0);
+  const [direction, setDirection] = useState(1);
   const [isLoadingAgen, setIsLoadingAgen] = useState(true);
   const [dataBannerHeader, setDataBannerHeader] = useState([]);
   const [dataBannerHome, setDataBannerHome] = useState([]);
-
   const [userData, setUserData] = useState(null);
+  
+  // ✅ State untuk notifikasi
+  const [hasUnreadNotif, setHasUnreadNotif] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
-    // ✅ State untuk status bar
   const [statusBarStyle, setStatusBarStyle] = useState('light-content');
   const [statusBarColor, setStatusBarColor] = useState('transparent');
 
@@ -53,28 +56,39 @@ const [currentBanner, setCurrentBanner] = React.useState(0);
     { id: 8, icon: require('../../assets/difotoin.png'), label: 'difotoin' },
   ];
 
+ 
   useEffect(() => {
-  const interval = setInterval(() => {
-    setCurrentBanner((prevBanner) => {
-      const nextBanner = (prevBanner + 1) % bannerImages.length;
-      
-      if (scrollViewRef.current) {
-        scrollViewRef.current.scrollTo({
-          x: nextBanner * (width - 40),
-          animated: true,
-        });
-      }
-      
-      return nextBanner;
-    });
-  }, 3000); // Ganti setiap 3 detik
+    const interval = setInterval(() => {
+      setCurrentBanner((prev) => {
+        let next = prev + direction;
 
-  return () => clearInterval(interval); // Cleanup
-// eslint-disable-next-line react-hooks/exhaustive-deps
-}, []);
+        if (next >= bannerImages.length - 1) {
+          setDirection(-1);
+          next = bannerImages.length - 1;
+        }
+
+        if (next <= 0) {
+          setDirection(1);
+          next = 0;
+        }
+
+        if (scrollViewRef.current) {
+          scrollViewRef.current.scrollTo({
+            x: next * (width - 40),
+            animated: true,
+          });
+        }
+
+        return next;
+      });
+    }, 5000);
+
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [direction]);
 
 
-    const checkAgenStatus = async () => {
+  const checkAgenStatus = async () => {
     try {
       setIsLoadingAgen(true);
       
@@ -85,8 +99,6 @@ const [currentBanner, setCurrentBanner] = React.useState(0);
         return;
       }
 
-
-      
       const userObj = JSON.parse(userJson);
       const userId = userObj.id;
 
@@ -97,21 +109,18 @@ const [currentBanner, setCurrentBanner] = React.useState(0);
         }
       );
 
-      
-
       console.log('====================================');
       console.log('dddd', response.data);
       console.log('====================================');
       setIsAgen(response.data.data?.length > 0);
       setIsLoadingAgen(false);
     } catch (error) {
-      console.error('Error checking agen status:', error);
       setIsAgen(false);
       setIsLoadingAgen(false);
     }
   };
 
-   const getUser = async () => {
+  const getUser = async () => {
     try {
       const userJson = await AsyncStorage.getItem('userData');
       if (userJson) {
@@ -133,8 +142,7 @@ const [currentBanner, setCurrentBanner] = React.useState(0);
     }
   };
 
-
-   const getBanner = async () => {
+  const getBanner = async () => {
     try {
       const userJson = await AsyncStorage.getItem('userData');
       if (userJson) {
@@ -146,13 +154,15 @@ const [currentBanner, setCurrentBanner] = React.useState(0);
         console.log('====================================');
         console.log('datban', bannerss);
         console.log('====================================');
-const filterDataHeader = bannerss.filter((e) =>
-  e.letak_banner.includes("home_header")
-);
+        const filterDataHeader = bannerss.filter(
+          (e) => e.letak_banner === "home_header"
+        );
 
-const filterDataBanHome = bannerss.filter((e) =>
-  e.letak_banner.includes("home")
-);
+        const filterDataBanHome = bannerss.filter(
+          (e) =>
+            e.letak_banner.includes("home") &&
+            e.letak_banner !== "home_header"
+        );
 
         console.log('datheadss', filterDataHeader);
         setDataBannerHeader(filterDataHeader)
@@ -163,7 +173,55 @@ const filterDataBanHome = bannerss.filter((e) =>
     }
   };
 
-   const formatCurrency = (amount) => {
+  // ✅ Fungsi untuk cek notifikasi
+  const checkNotifications = async () => {
+    try {
+      const userJson = await AsyncStorage.getItem('userData');
+      if (!userJson) return;
+
+      const userObj = JSON.parse(userJson);
+      const userId = userObj.id;
+
+      const response = await axios.get(`${API_URL}/api/notifications`);
+      const notifications = response.data.data || response.data;
+
+      // Filter notifikasi untuk user ini
+      const userNotifications = notifications.filter(
+        (notif) => notif.user_id === userId
+      );
+
+      // Cek notifikasi yang belum dibaca (dalam 24 jam terakhir atau sesuai logic kamu)
+      const lastReadTime = await AsyncStorage.getItem('lastNotifReadTime');
+      const lastRead = lastReadTime ? new Date(lastReadTime) : new Date(0);
+
+      const unreadNotifications = userNotifications.filter((notif) => {
+        const notifTime = new Date(notif.sent_at);
+        return notifTime > lastRead;
+      });
+
+      setHasUnreadNotif(unreadNotifications.length > 0);
+      setUnreadCount(unreadNotifications.length);
+
+      console.log('🔔 Unread notifications:', unreadNotifications.length);
+    } catch (error) {
+      console.error('❌ Error checking notifications:', error);
+    }
+  };
+
+  // ✅ Fungsi ketika klik notifikasi
+  const handleNotificationPress = async () => {
+    // Simpan waktu baca terakhir
+    await AsyncStorage.setItem('lastNotifReadTime', new Date().toISOString());
+    setHasUnreadNotif(false);
+    setUnreadCount(0);
+    
+    // Navigate ke MessageTab
+    navigation.navigate('MessageTab', {
+      tabaktif: 'notifikasi'
+    });
+  };
+
+  const formatCurrency = (amount) => {
     const numAmount = parseFloat(amount);
     return numAmount.toLocaleString('id-ID', {
       minimumFractionDigits: 0,
@@ -176,6 +234,7 @@ const filterDataBanHome = bannerss.filter((e) =>
     checkAgenStatus()
     getUser()
     getBanner()
+    checkNotifications() // ✅ Tambahkan ini
   }, [])
   
 
@@ -194,14 +253,25 @@ const filterDataBanHome = bannerss.filter((e) =>
       {/* Header Banner */}
       <View style={styles.headerBanner}>
         {dataBannerHeader[0] ?
-        <TouchableOpacity onPress={() => Linking.openURL(dataBannerHeader[0].url)}>
-<Image
-          source={{uri: URL_IMAGE + "/" + dataBannerHeader[0].image}}
-          style={styles.headerImage}
-          resizeMode="cover"
-        />
+       <TouchableOpacity
+          onPress={async () => {
+            const url = dataBannerHeader[0].url;
+            if (!url) return;
+
+            const canOpen = await Linking.canOpenURL(url);
+            if (canOpen) {
+              Linking.openURL(url);
+            } else {
+              console.log("❌ Invalid header banner URL:", url);
+            }
+          }}
+        >
+          <Image
+            source={{uri: URL_IMAGE + "/" + dataBannerHeader[0].image}}
+            style={styles.headerImage}
+            resizeMode="cover"
+          />
         </TouchableOpacity>
-         
         :
        null
       }
@@ -219,8 +289,24 @@ const filterDataBanHome = bannerss.filter((e) =>
           />
         </View>
         <View style={{height: 57, width: 1, backgroundColor: '#A1A3A2'}} />
-        <TouchableOpacity style={styles.notificationButton}>
-        <Image source={require('../../assets/notif.png')} style={{width: 30, height: 30}} />
+        
+        {/* ✅ Notification Button dengan Red Dot */}
+        <TouchableOpacity 
+          style={styles.notificationButton}
+          onPress={handleNotificationPress}
+        >
+          <View>
+            <Image source={require('../../assets/notif.png')} style={{width: 30, height: 30}} />
+            {hasUnreadNotif && (
+              <View style={styles.notificationDot}>
+                {unreadCount > 0 && unreadCount <= 99 && (
+                  <Text style={styles.notificationCount}>
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </Text>
+                )}
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
       </View>
 
@@ -243,17 +329,14 @@ const filterDataBanHome = bannerss.filter((e) =>
       </View>
 
       {/* Agent Status & Balance */}
-
-      
       {isAgen ?
         <View style={styles.statusContainer}>
         <View style={styles.agentCard}>
           <View>
-<Text style={styles.agentTitle}>Terdaftar Sebagai</Text>
-          <View style={styles.agentBadge}>
-            <Text style={styles.agentText}>Agen Platinum PPOB</Text>
-         
-          </View>
+            <Text style={styles.agentTitle}>Terdaftar Sebagai</Text>
+            <View style={styles.agentBadge}>
+              <Text style={styles.agentText}>Agen Platinum PPOB</Text>
+            </View>
           </View>
           
           <View>
@@ -261,47 +344,45 @@ const filterDataBanHome = bannerss.filter((e) =>
           </View>
         </View>
 
-           <View style={styles.balanceCard}>
+        <TouchableOpacity style={styles.balanceCard} onPress={() => navigation.push('TopUpPage')}>
           <View>
             <View>
-<View style={{flexDirection: 'row'}}>
-          <Text style={styles.balanceTitle}>Saldo</Text>
-           {saldoShow ?
-          
-            <TouchableOpacity onPress={() => setSaldoShow(false)}>
-            
-          <Image source={require('../../assets/saldoshow.png')} style={{width: 11, height: 11, marginLeft: 8, marginTop: 3}} />
-          </TouchableOpacity>
-
-          :
-            <TouchableOpacity onPress={() => setSaldoShow(true)}>
-            
-          <Image source={require('../../assets/invisible.png')} style={{width: 11, height: 11, marginLeft: 8, marginTop: 3}} />
-          </TouchableOpacity>
-        }
-        
-          </View>
-          <Text style={styles.balanceAmount}>{ saldoShow ? `Rp ${formatCurrency(userData.wallet_balance)}` : 'Rp -----'}</Text>
-
-
+              <View style={{flexDirection: 'row'}}>
+                <Text style={styles.balanceTitle}>Saldo</Text>
+                {saldoShow ?
+                  <TouchableOpacity onPress={() => setSaldoShow(false)}>
+                    <Image source={require('../../assets/saldoshow.png')} style={{width: 11, height: 11, marginLeft: 8, marginTop: 3}} />
+                  </TouchableOpacity>
+                :
+                  <TouchableOpacity onPress={() => setSaldoShow(true)}>
+                    <Image source={require('../../assets/invisible.png')} style={{width: 11, height: 11, marginLeft: 8, marginTop: 3}} />
+                  </TouchableOpacity>
+                }
+              </View>
+              <Text
+                style={[
+                  styles.balanceAmount,
+                  { color: saldoShow ? '#000' : '#C5C5C5' }
+                ]}
+              >
+                {saldoShow ? `Rp ${formatCurrency(userData.wallet_balance)}` : 'Rp -----'}
+              </Text>
             </View>
-  
           </View>
         
-        <View>
-          <Image source={require('../../assets/wallethome.png')} style={{width: 28, height: 28, marginTop: 3}} />
-        </View>
-        </View>
+          <View>
+            <Image source={require('../../assets/wallethome.png')} style={{width: 28, height: 28, marginTop: 3}} />
+          </View>
+        </TouchableOpacity>
       </View>
       :
         <View style={styles.statusContainer}>
         <TouchableOpacity style={styles.agentCard} onPress={() => navigation.push('DaftarAgenPage')}>
           <View>
-          <Text style={styles.agentTitle}>Daftar Sebagai</Text>
-          <View style={styles.agentBadge}>
-            <Text style={styles.agentText}>Agen Platinum PPOB</Text>
-         
-          </View>
+            <Text style={styles.agentTitle}>Daftar Sebagai</Text>
+            <View style={styles.agentBadge}>
+              <Text style={styles.agentText}>Agen Platinum PPOB</Text>
+            </View>
           </View>
           
           <View>
@@ -312,34 +393,32 @@ const filterDataBanHome = bannerss.filter((e) =>
         <TouchableOpacity style={styles.balanceCard} onPress={() => navigation.push('TopUpPage')}>
           <View>
             <View>
-<View style={{flexDirection: 'row'}}>
-          <Text style={styles.balanceTitle}>Saldo</Text>
-          {saldoShow ?
-          
-            <TouchableOpacity onPress={() => setSaldoShow(false)}>
-            
-          <Image source={require('../../assets/saldoshow.png')} style={{width: 11, height: 11, marginLeft: 8, marginTop: 3}} />
-          </TouchableOpacity>
-
-          :
-            <TouchableOpacity onPress={() => setSaldoShow(true)}>
-            
-          <Image source={require('../../assets/invisible.png')} style={{width: 11, height: 11, marginLeft: 8, marginTop: 3}} />
-          </TouchableOpacity>
-        }
-        
-         
-          </View>
-          <Text style={styles.balanceAmount}>{ saldoShow ? `Rp ${formatCurrency(userData.wallet_balance)}` : 'Rp -----'}</Text>
-
-
+              <View style={{flexDirection: 'row'}}>
+                <Text style={styles.balanceTitle}>Saldo</Text>
+                {saldoShow ?
+                  <TouchableOpacity onPress={() => setSaldoShow(false)}>
+                    <Image source={require('../../assets/saldoshow.png')} style={{width: 11, height: 11, marginLeft: 8, marginTop: 3}} />
+                  </TouchableOpacity>
+                :
+                  <TouchableOpacity onPress={() => setSaldoShow(true)}>
+                    <Image source={require('../../assets/invisible.png')} style={{width: 11, height: 11, marginLeft: 8, marginTop: 3}} />
+                  </TouchableOpacity>
+                }
+              </View>
+              <Text
+                style={[
+                  styles.balanceAmount,
+                  { color: saldoShow ? '#000' : '#C5C5C5' }
+                ]}
+              >
+                {saldoShow ? `Rp ${formatCurrency(userData.wallet_balance)}` : 'Rp -----'}
+              </Text>
             </View>
-  
           </View>
         
-        <View>
-          <Image source={require('../../assets/wallethome.png')} style={{width: 28, height: 28, marginTop: 3}} />
-        </View>
+          <View>
+            <Image source={require('../../assets/wallethome.png')} style={{width: 28, height: 28, marginTop: 3}} />
+          </View>
         </TouchableOpacity>
       </View>
     }
@@ -361,10 +440,21 @@ const filterDataBanHome = bannerss.filter((e) =>
           
           dataBannerHome.map((banner, index) => (
             <View key={index} style={styles.bannerSlide}>
-               <TouchableOpacity onPress={() => Linking.openURL(banner.url)}>
-              <Image source={{uri: URL_IMAGE + "/" + banner.image}} style={styles.bannerImage} resizeMode="cover" />
+             <TouchableOpacity
+              onPress={async () => {
+                if (!banner.url || banner.url.trim() === "") return;
 
-               </TouchableOpacity>
+                const canOpen = await Linking.canOpenURL(banner.url);
+
+                if (canOpen) {
+                  Linking.openURL(banner.url);
+                } else {
+                  console.log("❌ Invalid URL, ignoring:", banner.url);
+                }
+              }}
+            >
+              <Image source={{uri: URL_IMAGE + "/" + banner.image}} style={styles.bannerImage} resizeMode="cover" />
+            </TouchableOpacity>
             </View>
           ))
         :
@@ -390,9 +480,9 @@ const filterDataBanHome = bannerss.filter((e) =>
         <View style={styles.servicesGrid}>
           {mainServices.map((service) => (
             <TouchableOpacity key={service.id} style={styles.mainServiceItem} onPress={() => Alert.alert(
-  "Pengumuman",
-  "Fitur ini masih dalam tahap pengembangan, di perkirakan launching awal januari 2026",
-)}>
+              "Pengumuman",
+              "Fitur ini masih dalam tahap pengembangan, di perkirakan launching awal januari 2026",
+            )}>
               <View style={styles.mainServiceIconContainer}>
                 <Image source={service.icon} style={styles.mainServiceIcon} resizeMode="contain" />
               </View>
@@ -413,8 +503,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9F9F9',
-     paddingTop: 0,
-     
+    paddingTop: 0,
   },
   headerBanner: {
     width: '100%',
@@ -434,16 +523,12 @@ const styles = StyleSheet.create({
     height: 58,
     alignSelf: 'center',
     marginTop: -20,
-
     borderRadius: 12
-    
-   
   },
   searchBox: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-
     borderRadius: 25,
     height: 50,
   },
@@ -461,6 +546,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 25,
   },
+  // ✅ Style untuk notification dot
+  notificationDot: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: '#FF3B30',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'white',
+  },
+  notificationCount: {
+    color: 'white',
+    fontSize: 10,
+    fontFamily: 'Poppins-Bold',
+    fontWeight: 'bold',
+  },
   quickServices: {
     flexDirection: 'row',
     justifyContent: 'space-around',
@@ -470,7 +575,6 @@ const styles = StyleSheet.create({
   serviceItem: {
     alignItems: 'center',
     flex: 1,
-   
   },
   serviceIconContainer: {
     width: 65,
@@ -494,59 +598,59 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-Regular'
   },
   statusContainer: {
-  flexDirection: 'row',
-  paddingHorizontal: 22,
-  justifyContent: 'space-evenly',
-  paddingVertical: 12,
-  gap: 13,
-  backgroundColor: '#DEE3EE'
-},
-agentCard: {
-  flex: 1, // ✅ Tambahkan ini
-  flexDirection: 'row',
-  backgroundColor: '#FFF',
-  borderRadius: 12,
-  padding: 11,
-  height: 60
-},
-agentTitle: {
-  fontSize: 10,
-  color: 'black',
-  marginBottom: 0,
-  fontFamily: 'Poppins-Regular'
-},
-agentBadge: {
-  flexDirection: 'row',
-  alignItems: 'center',
-},
-agentText: {
-  fontSize: 10,
-  fontFamily: 'Poppins-Medium',
-  color: '#000000',
-},
-checkIcon: {
-  marginLeft: 5,
-},
-balanceCard: {
-  flex: 1, // ✅ Ubah dari width: '50%' ke flex: 1
-  backgroundColor: '#FFF',
-  borderRadius: 12,
-  padding: 13,
-  height: 60,
-  flexDirection: 'row',
-  justifyContent: 'space-between'
-},
-balanceTitle: {
-  fontSize: 12,
-  fontFamily: 'Poppins-Medium',
-  color: '#000000',
-  marginBottom: 0,
-},
-balanceAmount: {
-  fontSize: 12,
-  fontFamily: 'Poppins-Medium',
-  color: '#A1A3A2',
-},
+    flexDirection: 'row',
+    paddingHorizontal: 22,
+    justifyContent: 'space-evenly',
+    paddingVertical: 12,
+    gap: 13,
+    backgroundColor: '#DEE3EE'
+  },
+  agentCard: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 11,
+    height: 60
+  },
+  agentTitle: {
+    fontSize: 10,
+    color: 'black',
+    marginBottom: 0,
+    fontFamily: 'Poppins-Regular'
+  },
+  agentBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  agentText: {
+    fontSize: 10,
+    fontFamily: 'Poppins-Medium',
+    color: '#000000',
+  },
+  checkIcon: {
+    marginLeft: 5,
+  },
+  balanceCard: {
+    flex: 1,
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 13,
+    height: 60,
+    flexDirection: 'row',
+    justifyContent: 'space-between'
+  },
+  balanceTitle: {
+    fontSize: 12,
+    fontFamily: 'Poppins-Medium',
+    color: '#000000',
+    marginBottom: 0,
+  },
+  balanceAmount: {
+    fontSize: 12,
+    fontFamily: 'Poppins-Medium',
+    color: '#A1A3A2',
+  },
   bannerContainer: {
     marginTop: 10,
     paddingHorizontal: 20,
@@ -580,7 +684,6 @@ balanceAmount: {
   mainServicesContainer: {
     paddingHorizontal: 15,
     paddingTop: 20,
-    
   },
   servicesGrid: {
     flexDirection: 'row',
@@ -588,7 +691,6 @@ balanceAmount: {
     borderRadius: 15,
     padding: 15,
     justifyContent: 'space-between'
-    
   },
   mainServiceItem: {
     width: 65,
@@ -603,7 +705,7 @@ balanceAmount: {
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
-     borderWidth: 1,
+    borderWidth: 1,
     borderColor: '#CEF8EC',
     backgroundColor: 'white'
   },

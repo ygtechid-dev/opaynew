@@ -19,7 +19,7 @@ export default function TopUpWebViewPage({ route, navigation }) {
 
   const webViewRef = useRef(null);
   const checkIntervalRef = useRef(null);
-
+const [paymentLocked, setPaymentLocked] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [pageTitle, setPageTitle] = useState('');
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
@@ -73,13 +73,13 @@ export default function TopUpWebViewPage({ route, navigation }) {
     }, CHECK_INTERVAL);
   };
 
-  const stopAutoCheck = () => {
-    if (checkIntervalRef.current) {
-      clearInterval(checkIntervalRef.current);
-      checkIntervalRef.current = null;
-      console.log('🛑 Auto-check stopped');
-    }
-  };
+const stopAutoCheck = () => {
+  if (checkIntervalRef.current) {
+    clearInterval(checkIntervalRef.current);
+    checkIntervalRef.current = null;
+    console.log('🛑 Auto-check stopped (hard)');
+  }
+};
 
   const extractReferenceFromUrl = (url) => {
     try {
@@ -148,10 +148,15 @@ export default function TopUpWebViewPage({ route, navigation }) {
   };
 
   const checkPaymentStatus = async (isAutoCheck = false) => {
-    if (isProcessingPayment && !isAutoCheck) {
-      console.log('⏳ Already processing payment, skipping...');
-      return;
-    }
+   if (paymentLocked) {
+    console.log("⛔ Payment locked, skipping check...");
+    return;
+  }
+
+  if (isProcessingPayment && !isAutoCheck) {
+    console.log('⏳ Already processing payment, skipping...');
+    return;
+  }
 
     const refToUse = extractedReference;
 
@@ -179,12 +184,15 @@ export default function TopUpWebViewPage({ route, navigation }) {
         const status = response.data?.data?.status || '';
         console.log('📊 Payment Status:', status);
 
-        if (status === 'PAID') {
-          console.log('✅ Payment PAID - Processing top-up');
-          stopAutoCheck();
-          setIsProcessingPayment(true);
-          await handlePaymentSuccess();
-        } else if (status === 'UNPAID') {
+       if (status === 'PAID') {
+  console.log('✅ Payment PAID - Processing top-up');
+
+  setPaymentLocked(true);   // ⛔ BLOCK ALL FUTURE CALLS
+  stopAutoCheck();
+  setIsProcessingPayment(true);
+
+  await handlePaymentSuccess();
+} else if (status === 'UNPAID') {
           console.log('⏳ Payment still UNPAID');
           if (isAutoCheck) {
             setAutoCheckCount((prev) => prev + 1);
@@ -424,6 +432,7 @@ export default function TopUpWebViewPage({ route, navigation }) {
         </View>
 
         <TouchableOpacity
+        disabled={paymentLocked || isProcessingPayment}
           onPress={() => {
             console.log('🔄 Manual refresh triggered');
             console.log('Current reference:', extractedReference);

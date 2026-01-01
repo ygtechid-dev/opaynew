@@ -119,7 +119,6 @@ export default function AllTransactionPage({ navigation }) {
       setIsAgen(response.data.status === true && response.data.data?.length > 0);
       setIsLoadingAgen(false);
     } catch (error) {
-      console.error('Error checking agen status:', error);
       setIsAgen(false);
       setIsLoadingAgen(false);
     }
@@ -260,55 +259,61 @@ export default function AllTransactionPage({ navigation }) {
 
   // Add Fund to Wallet (Refund)
   const addFundToWallet = async (amount, refId) => {
-    try {
-      if (fundRefunded.has(refId)) {
-        console.log('Fund already refunded for transaction:', refId);
-        return true;
-      }
+  try {
+    console.log("🟡 [REFUND] Checking refund for:", refId);
 
-      console.log('=== Adding Fund to Wallet (Refund) ===');
-      console.log('Amount:', amount);
-      console.log('Ref ID:', refId);
+    // 1️⃣ CEK STATE (dalam sesi)
+    if (fundRefunded.has(refId)) {
+      console.log("⚠️ [REFUND] Already refunded (state)");
+      return true;
+    }
 
-      const userJson = await AsyncStorage.getItem('userData');
-      if (!userJson) {
-        console.log('User data is null, cannot add fund');
-        return false;
-      }
+    // 2️⃣ CEK ASYNCSTORAGE (persisten)
+    const refundedKey = `refund_${refId}`;
+    const refundedBefore = await AsyncStorage.getItem(refundedKey);
 
-      const userObj = JSON.parse(userJson);
-      const userId = userObj.id;
+    if (refundedBefore === "true") {
+      console.log("⚠️ [REFUND] Already refunded (AsyncStorage)");
+      // Sinkronisasi state agar UI aware
+      setFundRefunded(prev => new Set([...prev, refId]));
+      return true;
+    }
 
-      const response = await axios.post(
-        `${API_URL}/api/add-fund`,
-        {
-          customer_id: parseInt(userId),
-          amount: amount,
-          referance: refId,
-          payment_method: 'QRIS',
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+    console.log("🔥 [REFUND] Processing refund:", amount);
 
-      console.log('Add fund response:', response.status);
+    // 3️⃣ Ambil user
+    const userData = await AsyncStorage.getItem('userData');
+    if (!userData) return false;
 
-      if (response.status === 200) {
-        console.log('✅ Fund added successfully (Refunded)');
-        setFundRefunded((prev) => new Set(prev).add(refId));
-        return true;
-      } else {
-        console.log('❌ Failed to add fund:', response.status);
-        return false;
-      }
-    } catch (error) {
-      console.error('❌ Error adding fund to wallet:', error);
+    const userObj = JSON.parse(userData);
+
+    // 4️⃣ Panggil API untuk refund
+    const response = await axios.post(`${API_URL}/api/wallet-transactions/add`, {
+      customer_id: userObj.id,
+      amount: amount,
+      referance: refId,
+      payment_method: 'QRIS',
+    });
+
+    if (response.data.success) {
+      console.log("🟢 [REFUND] Refund SUCCESS for:", refId);
+
+      // Simpan ke STATE + STORAGE
+      setFundRefunded(prev => new Set([...prev, refId]));
+      await AsyncStorage.setItem(refundedKey, "true");
+
+      return true;
+    } else {
+      console.log("❌ [REFUND] API refund failed:", response.data);
       return false;
     }
-  };
+
+  } catch (error) {
+    console.error("❌ [REFUND] Error during refund:", error.response?.data || error);
+    return false;
+  }
+};
+
 
   // Add Loyalty Points
   const addLoyaltyPoints = async (refId, nominalPoint) => {
@@ -399,7 +404,11 @@ export default function AllTransactionPage({ navigation }) {
     if (refreshingTransactions.has(transaction.refId)) return;
 
     setRefreshingTransactions((prev) => new Set(prev).add(transaction.refId));
+   const userJson = await AsyncStorage.getItem('userData');
+    
 
+      const userObj = JSON.parse(userJson);
+      const userId = userObj.id;
     try {
       const response = await axios.post(
         `${API_URL_PROD}/api/check-transaction`,
@@ -408,6 +417,7 @@ export default function AllTransactionPage({ navigation }) {
           buyer_sku_code: transaction.buyerSkuCode || '',
           ref_id: transaction.refId,
           testing: false,
+          user_id: userId
         },
         {
           headers: { 'Content-Type': 'application/json' },
@@ -461,19 +471,7 @@ export default function AllTransactionPage({ navigation }) {
 
                 if (nominalPoint > 0) {
                   console.log('💎 Adding', nominalPoint, 'loyalty points for', transaction.refId);
-                  const loyaltyAdded = await addLoyaltyPoints(
-                    transaction.refId,
-                    nominalPoint
-                  );
-
-                  console.log('🎉 Loyalty points added successfully:', loyaltyAdded);
-
-                  if (loyaltyAdded && !isAutoRefresh) {
-                    Alert.alert(
-                      'Sukses',
-                      `${nominalPoint} loyalty points telah ditambahkan!`
-                    );
-                  }
+              
                 } else {
                   console.log('⚠️ Nominal point is 0 or negative, skipping loyalty points');
                 }
@@ -524,7 +522,7 @@ export default function AllTransactionPage({ navigation }) {
             } else if (newStatus === 'FAILED' || newStatus === 'GAGAL') {
               message = 'Transaksi gagal, saldo telah dikembalikan';
             }
-            Alert.alert('Info', message);
+            // Alert.alert('Info', message);
           }
         }
       }
